@@ -1,3 +1,4 @@
+#include <GL/glew.h>
 #include <GL\glut.h>
 #include <gl\freeglut.h>
 #include <gl\freeglut_ext.h>
@@ -7,6 +8,7 @@
 #include <vector>
 #include <time.h>
 #include <cl/cl.h>
+#include <thread>
 #include "SphereSystem.h"
 #include "utils.h"
 
@@ -58,6 +60,8 @@ int main(int argc, char* argv[]) {
 	psystem->reset();
 
 	glutTimerFunc(25, timer, 1);
+	glewInit();
+
 	glutReshapeFunc(reshapeWindow);
 	glutDisplayFunc(display);
 	initLight();
@@ -132,6 +136,15 @@ void initLight() {
 	glLightfv(GL_LIGHT0, GL_POSITION, lightPosition);
 }
 
+void parallerDrawSphere(float* pos, int start, int end) {
+	for (int i = start; i < end; i++) {
+		GLfloat red = (i % NUM_PARTICLES) / (float)NUM_PARTICLES;
+		GLfloat green = (i % NUM_PARTICLES) / (float)NUM_PARTICLES;
+		GLfloat blue = (i % NUM_PARTICLES) / (float)NUM_PARTICLES;
+		drawSphere(pos[i * 4 + 0], pos[i * 4 + 1], pos[i * 4 + 2], pos[i * 4 + 3], red, green, blue);
+	}
+}
+
 void display(void) {
 	glClearColor(0.2, 0.2, 0.2, 0.4);
 	glClearDepth(2);
@@ -145,6 +158,7 @@ void display(void) {
 	drawCoordinate();
 
 	float* pos = psystem->get_pos();
+	
 	for (int i = 0; i < NUM_PARTICLES; i++) {
 		GLfloat red = (i % NUM_PARTICLES) / (float)NUM_PARTICLES;
 		GLfloat green = (i % NUM_PARTICLES) / (float)NUM_PARTICLES;
@@ -152,4 +166,7 @@ void display(void) {
 		drawSphere(pos[i * 4 + 0], pos[i * 4 + 1], pos[i * 4 + 2], pos[i * 4 + 3], red, green, blue);
 	}
 	glutSwapBuffers();
+
 }
+
+

@@ -15,6 +15,7 @@ typedef unsigned int uint;
 static const unsigned int LOCAL_SIZE_LIMIT = 512U;
 
 static cl_kernel ckIntegrate, ckCalcHash, ckMemset, ckFindCellBoundsAndReorder, ckCollide;
+static cl_kernel ckBitonicSortLocal1, ckBitonicMergeGlobal;
 
 
 extern "C" void prepareOpenCLPlatform();
@@ -24,7 +25,6 @@ extern "C" void copyArrayFromDevice(void* hostPtr, const cl_mem memObj, size_t s
 extern "C" void copyArrayToDevice(cl_mem memObj, const void* hostPtr, size_t offset, size_t size);
 extern "C" void setParameters(sim_params * m_params);
 extern "C" void setParametersHost(sim_params * host_params);
-extern "C" void initBitonicSort(cl_context cxGPUContext, cl_command_queue cqParamCommandQue);
 extern "C" void integrateSystem(cl_mem d_Pos, cl_mem d_Vel, float deltaTime, uint numParticles);
 extern "C" void calcHash(cl_mem d_Hash, cl_mem d_Index, cl_mem d_Pos, int numParticles);
 static void memsetOCL(cl_mem d_Data, uint val, uint N);

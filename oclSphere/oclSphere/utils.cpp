@@ -11,11 +11,6 @@ static cl_program cpParticles;
 
 
 static cl_command_queue cqDefaultCommandQue;
-
-static cl_kernel
-ckBitonicSortLocal1,
-ckBitonicMergeGlobal;
-
 static cl_program cpBitonicSort;
 
 char* clcode(const char* fileName, size_t* length) {
@@ -45,7 +40,6 @@ extern "C" void prepareOpenCLPlatform() {
     oclCheckError(ciErrNum, CL_SUCCESS);
 
     ciErrNum = clGetDeviceIDs(cpPlatform[1], CL_DEVICE_TYPE_GPU, 1, &cdDevices, NULL);
-    std::cout << ciErrNum << std::endl;
     oclCheckError(ciErrNum, CL_SUCCESS);
 
     cxGPUContext = clCreateContext(NULL, 1, &cdDevices, 0, 0, &ciErrNum);
@@ -82,8 +76,23 @@ extern "C" void prepareOpenCLPlatform() {
     allocateArray(&params, sizeof(sim_params));
     cqDefaultCommandQue = cqCommandQueue;
 
+    char* cBitonicSort = clcode("BitonicSort_b.cl", &kernelLength);
+    cpBitonicSort = clCreateProgramWithSource(cxGPUContext, 1, (const char**)&cBitonicSort, &kernelLength, &ciErrNum);
+    oclCheckError(ciErrNum, CL_SUCCESS);
+
+    ciErrNum = clBuildProgram(cpBitonicSort, 0, NULL, NULL, NULL, NULL);
+    oclCheckError(ciErrNum, CL_SUCCESS);
+
+    ckBitonicSortLocal1 = clCreateKernel(cpBitonicSort, "bitonicSortLocal1", &ciErrNum);
+    oclCheckError(ciErrNum, CL_SUCCESS);
+
+    ckBitonicMergeGlobal = clCreateKernel(cpBitonicSort, "bitonicMergeGlobal", &ciErrNum);
+    oclCheckError(ciErrNum, CL_SUCCESS);
+
+    cqDefaultCommandQue = cqCommandQueue;
+
     free(cParticles);
-    initBitonicSort(cxGPUContext, cqCommandQueue);
+    free(cBitonicSort);
 }
 
 extern "C" void allocateArray(cl_mem * memObj, size_t size) {
@@ -167,25 +176,6 @@ extern"C" void bitonicSort(cl_command_queue cqCommandQueue,cl_mem d_DstKey, cl_m
             }
         }
     }
-}
-
-extern "C" void initBitonicSort(cl_context cxGPUContext, cl_command_queue cqParamCommandQue) {
-    cl_int ciErrNum;
-    size_t kernelLength;
-
-    char* cBitonicSort = clcode("BitonicSort_b.cl", &kernelLength);
-    cpBitonicSort = clCreateProgramWithSource(cxGPUContext, 1, (const char**)&cBitonicSort, &kernelLength, &ciErrNum);
-    oclCheckError(ciErrNum, CL_SUCCESS);
-
-    ciErrNum = clBuildProgram(cpBitonicSort, 0, NULL, NULL, NULL, NULL);
-    oclCheckError(ciErrNum, CL_SUCCESS);
-
-    ckBitonicSortLocal1 = clCreateKernel(cpBitonicSort, "bitonicSortLocal1", &ciErrNum);
-    oclCheckError(ciErrNum, CL_SUCCESS);
-    ckBitonicMergeGlobal = clCreateKernel(cpBitonicSort, "bitonicMergeGlobal", &ciErrNum);
-    oclCheckError(ciErrNum, CL_SUCCESS);
-    cqDefaultCommandQue = cqParamCommandQue;
-    free(cBitonicSort);
 }
 
 static size_t uSnap(size_t a, size_t b) {
