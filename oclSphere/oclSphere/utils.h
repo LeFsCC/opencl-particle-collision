@@ -6,9 +6,8 @@
 #include <cl/cl.h>
 #include "SphereSystem.h"
 #include <fstream>
-#define oclCheckErrorEX(a, b, c) __oclCheckErrorEX(a, b, c, __FILE__ , __LINE__) 
-#define oclCheckError(a, b) oclCheckErrorEX(a, b, 0) 
-typedef cl_mem memHandle_t;
+#define oclCheckError(a, b) __oclCheckErrorEX(a, b, 0, __FILE__ , __LINE__)
+typedef cl_mem cl_mem;
 typedef unsigned int uint;
 #define MAX(a, b) ((a > b) ? a : b)
 #define MIN(a, b) ((a < b) ? a : b)
@@ -18,23 +17,22 @@ static const unsigned int LOCAL_SIZE_LIMIT = 512U;
 static cl_kernel ckIntegrate, ckCalcHash, ckMemset, ckFindCellBoundsAndReorder, ckCollide;
 
 
-extern "C" void startupOpenCL();
-extern "C" void allocateArray(memHandle_t * memObj, size_t size);
-extern "C" void freeArray(memHandle_t memObj);
-extern "C" void copyArrayFromDevice(void* hostPtr, const memHandle_t memObj, size_t size);
-extern "C" void copyArrayToDevice(memHandle_t memObj, const void* hostPtr, size_t offset, size_t size);
-extern "C" void setParameters(simParams_t * m_params);
-extern "C" void setParametersHost(simParams_t * host_params);
-extern "C" void closeParticles(void);
+extern "C" void prepareOpenCLPlatform();
+extern "C" void allocateArray(cl_mem * memObj, size_t size);
+extern "C" void freeArray(cl_mem memObj);
+extern "C" void copyArrayFromDevice(void* hostPtr, const cl_mem memObj, size_t size);
+extern "C" void copyArrayToDevice(cl_mem memObj, const void* hostPtr, size_t offset, size_t size);
+extern "C" void setParameters(sim_params * m_params);
+extern "C" void setParametersHost(sim_params * host_params);
 extern "C" void initBitonicSort(cl_context cxGPUContext, cl_command_queue cqParamCommandQue);
-extern "C" void integrateSystem(memHandle_t d_Pos, memHandle_t d_Vel, float deltaTime, uint numParticles);
-extern "C" void calcHash(memHandle_t d_Hash, memHandle_t d_Index, memHandle_t d_Pos, int numParticles);
-static void memsetOCL(memHandle_t d_Data, uint val, uint N);
-extern "C" void findCellBoundsAndReorder(memHandle_t d_CellStart, memHandle_t d_CellEnd, memHandle_t d_ReorderedPos,
-    memHandle_t d_ReorderedVel, memHandle_t d_Hash, memHandle_t d_Index, memHandle_t d_Pos, memHandle_t d_Vel,
+extern "C" void integrateSystem(cl_mem d_Pos, cl_mem d_Vel, float deltaTime, uint numParticles);
+extern "C" void calcHash(cl_mem d_Hash, cl_mem d_Index, cl_mem d_Pos, int numParticles);
+static void memsetOCL(cl_mem d_Data, uint val, uint N);
+extern "C" void findCellBoundsAndReorder(cl_mem d_CellStart, cl_mem d_CellEnd, cl_mem d_ReorderedPos,
+    cl_mem d_ReorderedVel, cl_mem d_Hash, cl_mem d_Index, cl_mem d_Pos, cl_mem d_Vel,
     uint numParticles, uint numCells);
-extern "C" void collide(memHandle_t d_Vel, memHandle_t d_ReorderedPos, memHandle_t d_ReorderedVel, memHandle_t d_Index,
-    memHandle_t d_CellStart, memHandle_t d_CellEnd, uint   numParticles, uint   numCells);
+extern "C" void collide(cl_mem d_Vel, cl_mem d_ReorderedPos, cl_mem d_ReorderedVel, cl_mem d_Index,
+    cl_mem d_CellStart, cl_mem d_CellEnd, uint   numParticles, uint   numCells);
 static size_t uSnap(size_t a, size_t b);
 
 

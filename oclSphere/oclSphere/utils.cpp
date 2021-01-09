@@ -6,7 +6,7 @@ cl_platform_id cpPlatform;
 cl_context cxGPUContext;
 cl_command_queue cqCommandQueue;
 static cl_mem params;
-static simParams_t h_params;
+static sim_params h_params;
 static cl_program cpParticles;
 
 
@@ -20,7 +20,6 @@ ckBitonicMergeLocal;
 
 static cl_program cpBitonicSort;
 
-
 char* clcode(const char* fileName, size_t* length) {
     FILE* fp = fopen(fileName, "rb");
     fseek(fp, 0, SEEK_END);
@@ -31,11 +30,10 @@ char* clcode(const char* fileName, size_t* length) {
     fread(clcode, 1, fileset, fp);
     clcode[fileset] = 0;
     fclose(fp);
-    //printf("%s\n", clcode);
     return clcode;
 }
 
-extern "C" void startupOpenCL() {
+extern "C" void prepareOpenCLPlatform() {
     cl_uint counts;
     cl_platform_id* cpPlatform;
     cl_device_id cdDevices;
@@ -47,28 +45,16 @@ extern "C" void startupOpenCL() {
     cpPlatform =  new cl_platform_id[counts];
     ciErrNum = clGetPlatformIDs(counts, cpPlatform, NULL);
     oclCheckError(ciErrNum, CL_SUCCESS);
-    for (int i = 0; i < counts; i++) {
-		size_t size;
-        ciErrNum = clGetPlatformInfo(cpPlatform[i], CL_PLATFORM_NAME, 0, NULL, &size);
-		char* name = new char[size];
-        ciErrNum = clGetPlatformInfo(cpPlatform[i], CL_PLATFORM_NAME, size, name, NULL);
-		std::cout << "GPU" << i + 1 << "Ãû³Æ£º" << name << std::endl;
-		delete name;
-	}
-
 
     ciErrNum = clGetDeviceIDs(cpPlatform[1], CL_DEVICE_TYPE_GPU, 1, &cdDevices, NULL);
+    std::cout << ciErrNum << std::endl;
     oclCheckError(ciErrNum, CL_SUCCESS);
 
-    // Create the context
     cxGPUContext = clCreateContext(NULL, 1, &cdDevices, 0, 0, &ciErrNum);
     oclCheckError(ciErrNum, CL_SUCCESS);
 
-    //Create a command-queue
     cqCommandQueue = clCreateCommandQueue(cxGPUContext, cdDevices, 0, &ciErrNum);
     oclCheckError(ciErrNum, CL_SUCCESS);
-
-    //initBitonicSort(cxGPUContext, cqCommandQueue, argv);
 
     size_t kernelLength;
     char* cParticles = clcode("particle.cl", &kernelLength);
@@ -95,65 +81,43 @@ extern "C" void startupOpenCL() {
     ckCollide = clCreateKernel(cpParticles, "collide", &ciErrNum);
     oclCheckError(ciErrNum, CL_SUCCESS);
 
-    allocateArray(&params, sizeof(simParams_t));
+    allocateArray(&params, sizeof(sim_params));
     cqDefaultCommandQue = cqCommandQueue;
 
     free(cParticles);
     initBitonicSort(cxGPUContext, cqCommandQueue);
 }
 
-extern "C" void allocateArray(memHandle_t * memObj, size_t size) {
+extern "C" void allocateArray(cl_mem * memObj, size_t size) {
     cl_int ciErrNum;
     *memObj = clCreateBuffer(cxGPUContext, CL_MEM_READ_WRITE, size, NULL, &ciErrNum);
     oclCheckError(ciErrNum, CL_SUCCESS);
 }
 
-extern "C" void freeArray(memHandle_t memObj) {
+extern "C" void freeArray(cl_mem memObj) {
     cl_int ciErrNum;
     ciErrNum = clReleaseMemObject(memObj);
     oclCheckError(ciErrNum, CL_SUCCESS);
 }
 
-extern "C" void copyArrayFromDevice(void* hostPtr, memHandle_t memObj, size_t size) {
+extern "C" void copyArrayFromDevice(void* hostPtr, cl_mem memObj, size_t size) {
     cl_int ciErrNum;
     ciErrNum = clEnqueueReadBuffer(cqCommandQueue, memObj, CL_TRUE, 0, size, hostPtr, 0, NULL, NULL);
     oclCheckError(ciErrNum, CL_SUCCESS);
 }
 
-extern "C" void copyArrayToDevice(memHandle_t memObj, const void* hostPtr, size_t offset, size_t size) {
+extern "C" void copyArrayToDevice(cl_mem memObj, const void* hostPtr, size_t offset, size_t size) {
     cl_int ciErrNum;
     ciErrNum = clEnqueueWriteBuffer(cqCommandQueue, memObj, CL_TRUE, 0, size, hostPtr, 0, NULL, NULL);
     oclCheckError(ciErrNum, CL_SUCCESS);
 }
 
-extern "C" void setParameters(simParams_t * m_params) {
-    copyArrayToDevice(params, m_params, 0, sizeof(simParams_t));
+extern "C" void setParameters(sim_params * m_params) {
+    copyArrayToDevice(params, m_params, 0, sizeof(sim_params));
 }
 
-extern "C" void setParametersHost(simParams_t * host_params) {
-    memcpy(&h_params, host_params, sizeof(simParams_t));
-}
-
-extern "C" void closeParticles(void) {
-    cl_int ciErrNum;
-    ciErrNum = clReleaseMemObject(params);
-    ciErrNum |= clReleaseKernel(ckCollide);
-    ciErrNum |= clReleaseKernel(ckFindCellBoundsAndReorder);
-    ciErrNum |= clReleaseKernel(ckMemset);
-    ciErrNum |= clReleaseKernel(ckCalcHash);
-    ciErrNum |= clReleaseKernel(ckIntegrate);
-    oclCheckError(ciErrNum, CL_SUCCESS);
-}
- 
-static cl_uint factorRadix2(cl_uint& log2L, cl_uint L) {
-    if (!L) {
-        log2L = 0;
-        return 0;
-    }
-    else {
-        for (log2L = 0; (L & 1) == 0; L >>= 1, log2L++);
-        return L;
-    }
+extern "C" void setParametersHost(sim_params * host_params) {
+    memcpy(&h_params, host_params, sizeof(sim_params));
 }
  
 extern"C" void bitonicSort(
@@ -168,13 +132,7 @@ extern"C" void bitonicSort(
 ) {
     if (arrayLength < 2)
         return;
-
-    //Only power-of-two array lengths are supported so far
-    cl_uint log2L;
-
-    cl_uint factorizationRemainder = arrayLength & (arrayLength - 1);
-    //std::cout << factorizationRemainder << std::endl;
-    oclCheckError(factorizationRemainder == 1, CL_SUCCESS);
+    oclCheckError(cl_uint(arrayLength & (arrayLength - 1)) == 1, CL_SUCCESS);
 
     if (!cqCommandQueue)
         cqCommandQueue = cqDefaultCommandQue;
@@ -291,7 +249,7 @@ static size_t uSnap(size_t a, size_t b) {
     return ((a % b) == 0) ? a : (a - (a % b) + b);
 }
 
-extern "C" void integrateSystem(memHandle_t d_Pos, memHandle_t d_Vel, float deltaTime, uint numParticles) {
+extern "C" void integrateSystem(cl_mem d_Pos, cl_mem d_Vel, float deltaTime, uint numParticles) {
     cl_int ciErrNum;
     size_t globalWorkSize = uSnap(numParticles, wgSize);
 
@@ -311,7 +269,7 @@ extern "C" void integrateSystem(memHandle_t d_Pos, memHandle_t d_Vel, float delt
     oclCheckError(ciErrNum, CL_SUCCESS);
 }
 
-extern "C" void calcHash(memHandle_t d_Hash, memHandle_t d_Index, memHandle_t d_Pos, int numParticles) {
+extern "C" void calcHash(cl_mem d_Hash, cl_mem d_Index, cl_mem d_Pos, int numParticles) {
     cl_int ciErrNum;
     size_t globalWorkSize = uSnap(numParticles, wgSize);
 
@@ -326,7 +284,7 @@ extern "C" void calcHash(memHandle_t d_Hash, memHandle_t d_Index, memHandle_t d_
     oclCheckError(ciErrNum, CL_SUCCESS);
 }
 
-static void memsetOCL(memHandle_t d_Data, uint val, uint N) {
+static void memsetOCL(cl_mem d_Data, uint val, uint N) {
     cl_int ciErrNum;
     size_t globalWorkSize = uSnap(N, wgSize);
 
@@ -339,8 +297,8 @@ static void memsetOCL(memHandle_t d_Data, uint val, uint N) {
     oclCheckError(ciErrNum, CL_SUCCESS);
 }
 
-extern "C" void findCellBoundsAndReorder(memHandle_t d_CellStart, memHandle_t d_CellEnd, memHandle_t d_ReorderedPos,
-    memHandle_t d_ReorderedVel, memHandle_t d_Hash, memHandle_t d_Index, memHandle_t d_Pos, memHandle_t d_Vel,
+extern "C" void findCellBoundsAndReorder(cl_mem d_CellStart, cl_mem d_CellEnd, cl_mem d_ReorderedPos,
+    cl_mem d_ReorderedVel, cl_mem d_Hash, cl_mem d_Index, cl_mem d_Pos, cl_mem d_Vel,
     uint numParticles, uint numCells) {
     cl_int ciErrNum;
     memsetOCL(d_CellStart, 0xFFFFFFFFU, numCells);
@@ -362,8 +320,8 @@ extern "C" void findCellBoundsAndReorder(memHandle_t d_CellStart, memHandle_t d_
     oclCheckError(ciErrNum, CL_SUCCESS);
 }
 
-extern "C" void collide(memHandle_t d_Vel, memHandle_t d_ReorderedPos, memHandle_t d_ReorderedVel, memHandle_t d_Index,
-    memHandle_t d_CellStart, memHandle_t d_CellEnd, uint   numParticles, uint   numCells) {
+extern "C" void collide(cl_mem d_Vel, cl_mem d_ReorderedPos, cl_mem d_ReorderedVel, cl_mem d_Index,
+    cl_mem d_CellStart, cl_mem d_CellEnd, uint   numParticles, uint   numCells) {
     cl_int ciErrNum;
     size_t globalWorkSize = uSnap(numParticles, wgSize);
 

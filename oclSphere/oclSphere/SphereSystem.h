@@ -4,15 +4,14 @@
 
 #include <cl/cl.h>
 
-typedef cl_mem memHandle_t;
 typedef unsigned int uint;
-#define oclCheckErrorEX(a, b, c) __oclCheckErrorEX(a, b, c, __FILE__ , __LINE__) 
-#define oclCheckError(a, b) oclCheckErrorEX(a, b, 0) 
+#define oclCheckError(a, b) __oclCheckErrorEX(a, b, 0, __FILE__ , __LINE__)
 static size_t wgSize = 64;
 
 struct float3 {
     float x, y, z;
 };
+
 struct uint3 {
     unsigned int x, y, z;
 };
@@ -38,89 +37,51 @@ typedef struct {
     float shear;
     float attraction;
     float boundaryDamping;
-} simParams_t;
+} sim_params;
 
 static inline  float3 make_float3(float x, float y, float z) {
     float3 t; t.x = x; t.y = y; t.z = z; return t;
 }
-
+ 
 class Spheres {
 
 public:
-    enum ParticleConfig
-    {
-        CONFIG_RANDOM,
-        CONFIG_GRID,
-        _NUM_CONFIGS
-    };
-
-    enum ParticleArray
-    {
+    enum ParticleArray {
         POSITION,
         VELOCITY,
     };
-	Spheres(uint numParticles, uint3 gridSize, float fParticleRadius, float fColliderRadius);
-	~Spheres();
-    void _finalize();
-    void _initialize(int numParticles);
-    uint createVBO(uint size);
-    float* getArray(ParticleArray array);
-    void setArray(ParticleArray array, const float* data, int start, int count);
-
-
-    void reset(ParticleConfig config);
+	Spheres(uint numParticles, uint3 gridSize, float particle_radius, float collider_radius);
+    void initialize(int numParticles);
+    float* get_array(ParticleArray array);
+    void set_array(ParticleArray array, const float* data, int start, int count);
+    void reset();
     void update(float deltaTime);
+    float* get_pos() { return cpu_pos; }
 
-    void setIterations(int i) { m_solverIterations = i; }
-    void setDamping(float x) { m_params.globalDamping = x; }
-    void setGravity(float x) { m_params.gravity = make_float3(0.0f, x, 0.0f); }
-    void setCollideSpring(float x) { m_params.spring = x; }
-    void setCollideDamping(float x) { m_params.damping = x; }
-    void setCollideShear(float x) { m_params.shear = x; }
-    void setCollideAttraction(float x) { m_params.attraction = x; }
-    void setColliderPos(float3 x) { m_params.colliderPos = x; }
+protected:
+    uint num_particles;
 
-    float* getPos() { return m_hPos; }
+    float* cpu_pos;
+    float* cpu_vel;
+    float* cpu_reco_pos;
+    float* cpu_reco_vel;
+    uint* cpu_cell_start;
+    uint* cpu_cell_end;
+    uint* cpu_hash;
+    uint* cpu_index;
 
-protected: // data
-    bool m_bInitialized;
-    uint m_numParticles;
+    cl_mem          gpu_pos;
+    cl_mem          gpu_vel;
+    cl_mem     gpu_reco_pos;
+    cl_mem     gpu_reco_vel;
+    cl_mem         gpu_hash;
+    cl_mem        gpu_index;
+    cl_mem   gpu_cell_start;
+    cl_mem     gpu_cell_end;
 
-    // CPU data
-    float* m_hPos;
-    float* m_hVel;
-    float* m_hReorderedPos;
-    float* m_hReorderedVel;
-    uint* m_hCellStart;
-    uint* m_hCellEnd;
-    uint* m_hHash;
-    uint* m_hIndex;
-
-    // GPU data
-    memHandle_t          m_dPos;
-    memHandle_t          m_dVel;
-    memHandle_t m_dReorderedPos;
-    memHandle_t m_dReorderedVel;
-    memHandle_t         m_dHash;
-    memHandle_t        m_dIndex;
-    memHandle_t    m_dCellStart;
-    memHandle_t      m_dCellEnd;
-
-    uint m_gridSortBits;
-    uint       m_posVbo;
-    uint     m_colorVBO;
-
-    // params
-    simParams_t m_params;
-    uint3 m_gridSize;
-    uint m_numGridCells;
-    uint m_solverIterations;
+    sim_params params;
+    uint3 grid_size;
+    uint num_grid_cells;
 };
-extern "C" void findCellBoundsAndReorder(memHandle_t d_CellStart, memHandle_t d_CellEnd, memHandle_t d_ReorderedPos,
-	memHandle_t d_ReorderedVel, memHandle_t d_Hash, memHandle_t d_Index, memHandle_t d_Pos, memHandle_t d_Vel,
-	uint numParticles, uint numCells);
-
-extern "C" void collide(memHandle_t d_Vel, memHandle_t d_ReorderedPos, memHandle_t d_ReorderedVel, memHandle_t d_Index,
-	memHandle_t d_CellStart, memHandle_t d_CellEnd, uint   numParticles, uint   numCells);
 
 #endif SPHERESYSTEM_H
