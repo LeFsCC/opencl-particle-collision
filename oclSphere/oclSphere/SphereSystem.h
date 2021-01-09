@@ -8,6 +8,7 @@ typedef cl_mem memHandle_t;
 typedef unsigned int uint;
 #define oclCheckErrorEX(a, b, c) __oclCheckErrorEX(a, b, c, __FILE__ , __LINE__) 
 #define oclCheckError(a, b) oclCheckErrorEX(a, b, 0) 
+static size_t wgSize = 64;
 
 struct float3 {
     float x, y, z;
@@ -63,13 +64,12 @@ public:
     void _finalize();
     void _initialize(int numParticles);
     uint createVBO(uint size);
+    float* getArray(ParticleArray array);
+    void setArray(ParticleArray array, const float* data, int start, int count);
 
-    void dumpGrid();
-    void dumpParticles(uint start, uint count);
 
     void reset(ParticleConfig config);
     void update(float deltaTime);
-    void setArray(ParticleArray array, const float* data, int start, int count);
 
     void setIterations(int i) { m_solverIterations = i; }
     void setDamping(float x) { m_params.globalDamping = x; }
@@ -80,12 +80,6 @@ public:
     void setCollideAttraction(float x) { m_params.attraction = x; }
     void setColliderPos(float3 x) { m_params.colliderPos = x; }
 
-    float getParticleRadius() { return m_params.particleRadius; }
-    float3 getColliderPos() { return m_params.colliderPos; }
-    float getColliderRadius() { return m_params.colliderRadius; }
-    uint3 getGridSize() { return m_params.gridSize; }
-    float3 getWorldOrigin() { return m_params.worldOrigin; }
-    float3 getCellSize() { return m_params.cellSize; }
     float* getPos() { return m_hPos; }
 
 protected: // data
@@ -122,12 +116,6 @@ protected: // data
     uint m_numGridCells;
     uint m_solverIterations;
 };
-
-
-extern "C" void integrateSystem(memHandle_t d_Pos, memHandle_t d_Vel, float deltaTime, uint numParticles);
-
-extern "C" void calcHash( memHandle_t d_Hash, memHandle_t d_Index, memHandle_t d_Pos, int numParticles);
-
 extern "C" void findCellBoundsAndReorder(memHandle_t d_CellStart, memHandle_t d_CellEnd, memHandle_t d_ReorderedPos,
 	memHandle_t d_ReorderedVel, memHandle_t d_Hash, memHandle_t d_Index, memHandle_t d_Pos, memHandle_t d_Vel,
 	uint numParticles, uint numCells);

@@ -22,15 +22,15 @@
     <None Include="particle.cl">
       <Filter>源文件</Filter>
     </None>
+    <None Include="BitonicSort_b.cl">
+      <Filter>源文件</Filter>
+    </None>
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="utils.h">
       <Filter>头文件</Filter>
     </ClInclude>
     <ClInclude Include="SphereSystem.h">
-      <Filter>头文件</Filter>
-    </ClInclude>
-    <ClInclude Include="common.h">
       <Filter>头文件</Filter>
     </ClInclude>
   </ItemGroup>

@@ -13,11 +13,11 @@ typedef unsigned int uint;
 
 
 //OpenCL particles kernels
-static cl_kernel ckIntegrate, ckCalcHash, ckMemset, ckFindCellBoundsAndReorder, ckCollide;
+//static cl_kernel ckIntegrate, ckCalcHash, ckMemset, ckFindCellBoundsAndReorder, ckCollide;
+
 static cl_command_queue cqDefaultCommandQue;
 
 static cl_mem params;
-static size_t wgSize = 64;
 
 Spheres::Spheres(uint numParticles, uint3 gridSize, float fParticleRadius, float fColliderRadius) :
 	m_bInitialized(false),
@@ -43,14 +43,13 @@ Spheres::Spheres(uint numParticles, uint3 gridSize, float fParticleRadius, float
 	m_params.colliderRadius = fColliderRadius;
 
 	m_params.worldOrigin = make_float3(-1.0f, -1.0f, -1.0f);
-	//    m_params.cellSize = make_float3(worldSize.x / m_gridSize.x, worldSize.y / m_gridSize.y, worldSize.z / m_gridSize.z);
 	float cellSize = m_params.particleRadius * 2.0f;  // cell size equal to particle diameter
 	m_params.cellSize = make_float3(cellSize, cellSize, cellSize);
 
 	m_params.spring = 0.5f;
 	m_params.damping = 0.02f;
 	m_params.shear = 0.1f;
-	m_params.attraction = 0.0f;
+	m_params.attraction = 0.5f;
 	m_params.boundaryDamping = -0.5f;
 
 	m_params.gravity = make_float3(0.0f, -0.0003f, 0.0f);
@@ -151,57 +150,33 @@ uint Spheres::createVBO(uint size) {
 	return vbo;
 }
 
-void Spheres::dumpGrid() {
-	copyArrayFromDevice(m_hCellStart, m_dCellStart, 0, sizeof(uint) * m_numGridCells);
-	copyArrayFromDevice(m_hCellEnd, m_dCellEnd, 0, sizeof(uint) * m_numGridCells);
-}
-
-void Spheres::dumpParticles(uint start, uint count) {
-	copyArrayFromDevice(m_hPos, 0, m_posVbo, sizeof(float) * 4 * count);
-	copyArrayFromDevice(m_hVel, m_dVel, 0, sizeof(float) * 4 * count);
-}
-
 inline float frand(void) {
 	return (float)rand() / (float)RAND_MAX;
 }
 
 void Spheres::reset(ParticleConfig config) {
 	switch (config) {
-	default:
-	case CONFIG_RANDOM:
-	{
-		int p = 0, v = 0;
-		for (uint i = 0; i < m_numParticles; i++)
-		{
-			float point[3];
-			point[0] = frand();
-			point[1] = frand();
-			point[2] = frand();
-			m_hPos[p++] = 2.0f * (point[0] - 0.5f);
-			m_hPos[p++] = 2.0f * (point[1] - 0.5f);
-			m_hPos[p++] = 2.0f * (point[2] - 0.5f);
-			m_hPos[p++] = 1.0f;
-			m_hVel[v++] = 0.0f;
-			m_hVel[v++] = 0.0f;
-			m_hVel[v++] = 0.0f;
-			m_hVel[v++] = 0.0f;
+		case CONFIG_RANDOM: {
+			int p = 0, v = 0;
+			for (uint i = 0; i < m_numParticles; i++)
+			{
+				float point[3];
+				point[0] = frand();
+				point[1] = frand();
+				point[2] = frand();
+				m_hPos[p++] = 2.0f * (point[0] - 0.5f);
+				m_hPos[p++] = 2.0f * (point[1] - 0.5f);
+				m_hPos[p++] = 2.0f * (point[2] - 0.5f);
+				m_hPos[p++] = (rand() % 20 + 10) / 1000.0;
+
+				m_hVel[v++] = (rand() % 30 + 10) / 1000.0;
+				m_hVel[v++] = (rand() % 30 + 10) / 1000.0;
+				m_hVel[v++] = (rand() % 30 + 10) / 1000.0;
+				m_hVel[v++] = 0;
+			}
+			setArray(POSITION, m_hPos, 0, m_numParticles);
+			setArray(VELOCITY, m_hVel, 0, m_numParticles);
 		}
-	}
-	break;
-	}
-}
-
-void Spheres::setArray(ParticleArray array, const float* data, int start, int count) {
-
-	switch (array) {
-	default:
-	case POSITION:
-		glBindBuffer(GL_ARRAY_BUFFER, m_posVbo);
-		glBufferSubData(GL_ARRAY_BUFFER, start * 4 * sizeof(float), count * 4 * sizeof(float), data);
-		glBindBuffer(GL_ARRAY_BUFFER, 0);
-		break;
-	case VELOCITY:
-		copyArrayToDevice(m_dVel, data, start * 4 * sizeof(float), count * 4 * sizeof(float));
 		break;
 	}
 }
@@ -211,9 +186,6 @@ void Spheres::update(float deltaTime) {
 
 	setParameters(&m_params);
 	setParametersHost(&m_params);
-
-	//Download positions from VBO
-	memHandle_t pos;
 
 	integrateSystem(
 		m_dPos,
@@ -229,7 +201,7 @@ void Spheres::update(float deltaTime) {
 		m_numParticles
 	);
 
-	//bitonicSort(NULL, m_dHash, m_dIndex, m_dHash, m_dIndex, 1, m_numParticles, 0);
+	bitonicSort(NULL, m_dHash, m_dIndex, m_dHash, m_dIndex, 1, m_numParticles, 0);
 
 	//Find start and end of each cell and
 	//Reorder particle data for better cache coherency
@@ -256,95 +228,37 @@ void Spheres::update(float deltaTime) {
 		m_numParticles,
 		m_numGridCells
 	);
+	m_hPos = getArray(POSITION);
 }
 
+float* Spheres::getArray(ParticleArray array) {
+	float* hdata = 0;
+	memHandle_t ddata = 0;
 
-static size_t uSnap(size_t a, size_t b) {
-	return ((a % b) == 0) ? a : (a - (a % b) + b);
+	switch (array) {
+	default:
+	case POSITION:
+		hdata = m_hPos;
+		ddata = m_dPos;
+		break;
+	case VELOCITY:
+		hdata = m_hVel;
+		ddata = m_dVel;
+		break;
+	}
+	copyArrayFromDevice(hdata, ddata, m_numParticles * 4 * sizeof(float));
+	return hdata;
 }
 
-extern "C" void calcHash(memHandle_t d_Hash, memHandle_t d_Index, memHandle_t d_Pos, int numParticles) {
-	cl_int ciErrNum;
-	size_t globalWorkSize = uSnap(numParticles, wgSize);
-
-	ciErrNum = clSetKernelArg(ckCalcHash, 0, sizeof(cl_mem), (void*)&d_Hash);
-	ciErrNum |= clSetKernelArg(ckCalcHash, 1, sizeof(cl_mem), (void*)&d_Index);
-	ciErrNum |= clSetKernelArg(ckCalcHash, 2, sizeof(cl_mem), (void*)&d_Pos);
-	ciErrNum |= clSetKernelArg(ckCalcHash, 3, sizeof(cl_mem), (void*)&params);
-	ciErrNum |= clSetKernelArg(ckCalcHash, 4, sizeof(uint), (void*)&numParticles);
-	oclCheckError(ciErrNum, CL_SUCCESS);
-
-	ciErrNum = clEnqueueNDRangeKernel(cqDefaultCommandQue, ckCalcHash, 1, NULL, &globalWorkSize, &wgSize, 0, NULL, NULL);
-	oclCheckError(ciErrNum, CL_SUCCESS);
-}
-
-static void memsetOCL( memHandle_t d_Data, uint val, uint N) {
-	cl_int ciErrNum;
-	size_t globalWorkSize = uSnap(N, wgSize);
-
-	ciErrNum = clSetKernelArg(ckMemset, 0, sizeof(cl_mem), (void*)&d_Data);
-	ciErrNum |= clSetKernelArg(ckMemset, 1, sizeof(cl_uint), (void*)&val);
-	ciErrNum |= clSetKernelArg(ckMemset, 2, sizeof(cl_uint), (void*)&N);
-	oclCheckError(ciErrNum, CL_SUCCESS);
-
-	ciErrNum = clEnqueueNDRangeKernel(cqDefaultCommandQue, ckMemset, 1, NULL, &globalWorkSize, &wgSize, 0, NULL, NULL);
-	oclCheckError(ciErrNum, CL_SUCCESS);
-}
-
-extern "C" void findCellBoundsAndReorder(memHandle_t d_CellStart, memHandle_t d_CellEnd, memHandle_t d_ReorderedPos,
-	memHandle_t d_ReorderedVel, memHandle_t d_Hash, memHandle_t d_Index, memHandle_t d_Pos, memHandle_t d_Vel,
-	uint numParticles, uint numCells) {
-	cl_int ciErrNum;
-	memsetOCL(d_CellStart, 0xFFFFFFFFU, numCells);
-	size_t globalWorkSize = uSnap(numParticles, wgSize);
-
-	ciErrNum = clSetKernelArg(ckFindCellBoundsAndReorder, 0, sizeof(cl_mem), (void*)&d_CellStart);
-	ciErrNum |= clSetKernelArg(ckFindCellBoundsAndReorder, 1, sizeof(cl_mem), (void*)&d_CellEnd);
-	ciErrNum |= clSetKernelArg(ckFindCellBoundsAndReorder, 2, sizeof(cl_mem), (void*)&d_ReorderedPos);
-	ciErrNum |= clSetKernelArg(ckFindCellBoundsAndReorder, 3, sizeof(cl_mem), (void*)&d_ReorderedVel);
-	ciErrNum |= clSetKernelArg(ckFindCellBoundsAndReorder, 4, sizeof(cl_mem), (void*)&d_Hash);
-	ciErrNum |= clSetKernelArg(ckFindCellBoundsAndReorder, 5, sizeof(cl_mem), (void*)&d_Index);
-	ciErrNum |= clSetKernelArg(ckFindCellBoundsAndReorder, 6, sizeof(cl_mem), (void*)&d_Pos);
-	ciErrNum |= clSetKernelArg(ckFindCellBoundsAndReorder, 7, sizeof(cl_mem), (void*)&d_Vel);
-	ciErrNum |= clSetKernelArg(ckFindCellBoundsAndReorder, 8, (wgSize + 1) * sizeof(cl_uint), NULL);
-	ciErrNum |= clSetKernelArg(ckFindCellBoundsAndReorder, 9, sizeof(cl_uint), (void*)&numParticles);
-	oclCheckError(ciErrNum, CL_SUCCESS);
-
-	ciErrNum = clEnqueueNDRangeKernel(cqDefaultCommandQue, ckFindCellBoundsAndReorder, 1, NULL, &globalWorkSize, &wgSize, 0, NULL, NULL);
-	oclCheckError(ciErrNum, CL_SUCCESS);
-}
-
-extern "C" void collide(memHandle_t d_Vel, memHandle_t d_ReorderedPos, memHandle_t d_ReorderedVel, memHandle_t d_Index,
-	memHandle_t d_CellStart, memHandle_t d_CellEnd, uint   numParticles, uint   numCells) {
-	cl_int ciErrNum;
-	size_t globalWorkSize = uSnap(numParticles, wgSize);
-
-	ciErrNum = clSetKernelArg(ckCollide, 0, sizeof(cl_mem), (void*)&d_Vel);
-	ciErrNum |= clSetKernelArg(ckCollide, 1, sizeof(cl_mem), (void*)&d_ReorderedPos);
-	ciErrNum |= clSetKernelArg(ckCollide, 2, sizeof(cl_mem), (void*)&d_ReorderedVel);
-	ciErrNum |= clSetKernelArg(ckCollide, 3, sizeof(cl_mem), (void*)&d_Index);
-	ciErrNum |= clSetKernelArg(ckCollide, 4, sizeof(cl_mem), (void*)&d_CellStart);
-	ciErrNum |= clSetKernelArg(ckCollide, 5, sizeof(cl_mem), (void*)&d_CellEnd);
-	ciErrNum |= clSetKernelArg(ckCollide, 6, sizeof(cl_mem), (void*)&params);
-	ciErrNum |= clSetKernelArg(ckCollide, 7, sizeof(uint), (void*)&numParticles);
-	oclCheckError(ciErrNum, CL_SUCCESS);
-
-	ciErrNum = clEnqueueNDRangeKernel(cqDefaultCommandQue, ckCollide, 1, NULL, &globalWorkSize, &wgSize, 0, NULL, NULL);
-	oclCheckError(ciErrNum, CL_SUCCESS);
-}
-
-extern "C" void integrateSystem( memHandle_t d_Pos, memHandle_t d_Vel, float deltaTime, uint numParticles) {
-	cl_int ciErrNum;
-	size_t globalWorkSize = uSnap(numParticles, wgSize);
-
-	ciErrNum = clSetKernelArg(ckIntegrate, 0, sizeof(cl_mem), (void*)&d_Pos);
-	ciErrNum |= clSetKernelArg(ckIntegrate, 1, sizeof(cl_mem), (void*)&d_Vel);
-	ciErrNum |= clSetKernelArg(ckIntegrate, 2, sizeof(cl_mem), (void*)&params);
-	ciErrNum |= clSetKernelArg(ckIntegrate, 3, sizeof(float), (void*)&deltaTime);
-	ciErrNum |= clSetKernelArg(ckIntegrate, 4, sizeof(uint), (void*)&numParticles);
-	oclCheckError(ciErrNum, CL_SUCCESS);
-
-	ciErrNum = clEnqueueNDRangeKernel(cqDefaultCommandQue, ckIntegrate, 1, NULL, &globalWorkSize, &wgSize, 0, NULL, NULL);
-	oclCheckError(ciErrNum, CL_SUCCESS);
+void Spheres::setArray(ParticleArray array, const float* data, int start, int count) {
+	switch (array) {
+	default:
+	case POSITION:
+		copyArrayToDevice(m_dPos, data, start * 4 * sizeof(float), count * 4 * sizeof(float));
+		break;
+	case VELOCITY:
+		copyArrayToDevice(m_dVel, data, start * 4 * sizeof(float), count * 4 * sizeof(float));
+		break;
+	}
 }
 

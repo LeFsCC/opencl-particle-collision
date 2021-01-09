@@ -5,12 +5,14 @@
 #include <iostream>
 #include <math.h>
 #include <vector>
+#include <time.h>
 #include <cl/cl.h>
 #include "SphereSystem.h"
 #include "utils.h"
 
-#define GRID_SIZE         64
-#define NUM_PARTICLES     1000
+
+#define GRID_SIZE         32
+#define NUM_PARTICLES     1024
 
 using namespace std;
 const GLfloat Pi = 3.1415926536f;
@@ -42,10 +44,13 @@ GLint WinH = 800;
 GLfloat oldx;
 GLfloat oldy;
 
+
+
 void reshapeWindow(GLsizei w, GLsizei h);
 void initParticleSystem(int numParticles, uint3 gridSize);
 void display(void);
 void timer(int id);
+void initLight();
 
 // 粒子信息
 Spheres* psystem = 0;
@@ -68,12 +73,10 @@ uint3 gridSize;
 //主函数
 int main(int argc, char* argv[])
 {
+	srand(time(0));
 	numParticles = NUM_PARTICLES;
 	uint gridDim = GRID_SIZE;
-	
-
 	glutInit(&argc, argv);
-
 	glutInitDisplayMode(GLUT_DOUBLE | GLUT_RGBA);
 	glutInitWindowSize(800, 800);
 	glutInitWindowPosition(100, 100);
@@ -89,13 +92,14 @@ int main(int argc, char* argv[])
 	glutReshapeFunc(reshapeWindow);
 
 	glutDisplayFunc(display);
+	initLight();
 	glutMainLoop();
 	return 0;
 }
 
 
 void timer(int id) {
-	//psystem->update(1);
+	psystem->update(2);
 	glutPostRedisplay();
 	glutTimerFunc(10, timer, 1);
 }
@@ -108,45 +112,74 @@ void reshapeWindow(GLsizei w, GLsizei h)
 	gluPerspective(45, (GLfloat)w / (GLfloat)h, 0.1, 300);
 }
 
-void drawSolidCube(GLfloat x, GLfloat y, GLfloat z, GLfloat xl, GLfloat yl, GLfloat zl, GLubyte red, GLubyte green, GLubyte blue) {
+void drawSolidCube(GLfloat x, GLfloat y, GLfloat z, GLfloat xl, GLfloat yl, GLfloat zl, GLfloat red, GLfloat green, GLfloat blue) {
 	glPushMatrix();
-	glColor3ub(red, green, blue);
+	GLfloat color[] = { red, green, blue };
+	glMaterialfv(GL_FRONT, GL_AMBIENT_AND_DIFFUSE, color);
 	glTranslatef(x, y, z);
 	glScalef(xl, yl, zl);
 	glutSolidCube(1);
 	glPopMatrix();
 }
 
-void drawSphere(GLfloat x, GLfloat y, GLfloat z, GLfloat xl, GLfloat yl, GLfloat zl, GLubyte red, GLubyte green, GLubyte blue) {
+
+
+void drawSphere(GLfloat x, GLfloat y, GLfloat z, GLfloat r, GLfloat red, GLfloat green, GLfloat blue) {
 	glPushMatrix();
-	glColor3ub(red, green, blue);
+	GLfloat color[] = { red, green, blue };
+	glMaterialfv(GL_FRONT, GL_AMBIENT_AND_DIFFUSE, color);
 	glTranslatef(x, y, z);
 	glScalef(1.0f, 1.0f, 1.0f);
-	glutSolidSphere(0.03, 30, 30);
+	glutSolidSphere(r, 30, 30);
 	glPopMatrix();
 }
 
+
+void initLight() {
+	//允许深度测试
+	glEnable(GL_DEPTH_TEST);
+	//设置散射和镜像反射为白光
+	GLfloat WHITE[] = { 0.4, 0.8, 0.1 };    //白色
+	glLightfv(GL_LIGHT0, GL_DIFFUSE, WHITE);
+	glLightfv(GL_LIGHT0, GL_SPECULAR, WHITE);
+	//设置前表面的高光镜像反射为白光
+	glMaterialfv(GL_FRONT, GL_SPECULAR, WHITE);
+	//设置前表面散射光反光系数
+	glMaterialf(GL_FRONT, GL_SHININESS, 30);
+	//允许灯光
+	glEnable(GL_LIGHTING);
+	//打开0#灯
+	glEnable(GL_LIGHT0);
+	//光源位置参数
+	GLfloat lightPosition[] = { 4, 8, 7, 1 };
+	//设置光源位置
+	glLightfv(GL_LIGHT0, GL_POSITION, lightPosition);
+}
 
 void display(void)
 {
 	glClearColor(0.0, 0.0, 0.0, 0.0);
 	glClearDepth(2);
 	glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
+
 	glMatrixMode(GL_MODELVIEW);
 	glLoadIdentity();
 	gluLookAt(gl_view_x, gl_view_y, gl_view_z, gl_target_x, gl_target_y, gl_target_z, 0, 1, 0);
 	glScalef(gl_scale, gl_scale, gl_scale);
 
 	//地板
-	drawSolidCube(0, -1, 0, 2, 0, 2, 241, 241, 241);
+	drawSolidCube(0, -1, 0, 2, 0, 2, 0.9, 0.9, 0.9);
 	//墙壁1
-	drawSolidCube(0, 0, -1, 2, 2, 0, 171, 171, 171);
+	drawSolidCube(0, 0, -1, 2, 2, 0, 0.7, 0.7, 0.7);
 	//墙壁2
-	drawSolidCube(-1, 0, 0, 0, 2, 2, 101, 101, 101);
+	drawSolidCube(-1, 0, 0, 0, 2, 2, 0.3, 0.3, 0.3);
 
 	float* pos = psystem->getPos();
 	for (int i = 0; i < NUM_PARTICLES; i++) {
-		drawSphere(pos[i * 4 + 0], pos[i * 4 + 1], pos[i * 4 + 2], pos[i * 4 + 3], pos[i * 4 + 3], pos[i * 4 + 3], (i % 5) * 51, (i / 5) % 5 * 51, (i / 25) * 51);
+		GLfloat red = (i % NUM_PARTICLES) / (float)NUM_PARTICLES;
+		GLfloat green = (i % NUM_PARTICLES) / (float)NUM_PARTICLES;
+		GLfloat blue = (i % NUM_PARTICLES) / (float)NUM_PARTICLES;
+		drawSphere(pos[i * 4 + 0], pos[i * 4 + 1], pos[i * 4 + 2], pos[i * 4 + 3], red, green, blue);
 	}
 	glutSwapBuffers();
 }

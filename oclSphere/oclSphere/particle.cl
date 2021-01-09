@@ -77,7 +77,7 @@ __kernel void integrate(
     float4 pos = d_Pos[index];
     float4 vel = d_Vel[index];
 
-    pos.w = 1.0F;
+    //pos.w = 1.0F;
     vel.w = 0.0F;
 
     //Gravity
@@ -89,30 +89,30 @@ __kernel void integrate(
 
 
     //Collide with cube
-    if(pos.x < -1.0F + params -> particleRadius) {
-        pos.x = -1.0F + params->particleRadius;
+    if(pos.x < -1.0F + pos.w) {
+        pos.x = -1.0F + pos.w;
         vel.x *= params->boundaryDamping;
     }
-    if(pos.x > 1.0F - params -> particleRadius) {
-        pos.x = 1.0F - params->particleRadius;
+    if(pos.x > 1.0F - pos.w) {
+        pos.x = 1.0F - pos.w;
         vel.x *= params->boundaryDamping;
     }
 
-    if(pos.y < -1.0F + params -> particleRadius) {
-        pos.y = -1.0F + params->particleRadius;
+    if(pos.y < -1.0F + pos.w) {
+        pos.y = -1.0F + pos.w;
         vel.y *= params->boundaryDamping;
     }
-    if(pos.y > 1.0F - params -> particleRadius) {
-        pos.y = 1.0F - params->particleRadius;
+    if(pos.y > 1.0F - pos.w) {
+        pos.y = 1.0F - pos.w;
         vel.y *= params->boundaryDamping;
     }
 
-    if(pos.z < -1.0F + params -> particleRadius) {
-        pos.z = -1.0F + params->particleRadius;
+    if(pos.z < -1.0F + pos.w) {
+        pos.z = -1.0F + pos.w;
         vel.z *= params->boundaryDamping;
     }
-    if(pos.z > 1.0F - params -> particleRadius) {
-        pos.z = 1.0F - params->particleRadius;
+    if(pos.z > 1.0F - pos.w) {
+        pos.z = 1.0F - pos.w;
         vel.z *= params->boundaryDamping;
     }
 
@@ -335,19 +335,11 @@ __kernel void collide(
             force += collideSpheres(
                 pos, pos2,
                 vel, vel2,
-                params->particleRadius, params->particleRadius,
+                pos.w, pos2.w,
                 params->spring, params->damping, params->shear, params->attraction
             );
         }
     }
-
-    //Collide with cursor sphere
-    force += collideSpheres(
-        pos, (float4)(params->colliderPos.x, params->colliderPos.y, params->colliderPos.z, 0),
-        vel, (float4)(0, 0, 0, 0),
-        params->particleRadius, params->colliderRadius,
-        params->spring, params->damping, params->shear, params->attraction
-    );
 
     //Write New velocity back to original unsorted location
     d_Vel[d_Index[index]] = vel + force;
