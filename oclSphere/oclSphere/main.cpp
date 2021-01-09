@@ -12,7 +12,7 @@
 
 
 #define GRID_SIZE         64
-#define NUM_PARTICLES     1024
+#define NUM_PARTICLES     4096
 
 using namespace std;
 

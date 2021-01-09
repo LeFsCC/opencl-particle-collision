@@ -33,9 +33,9 @@ Spheres::Spheres(uint numParticles, uint3 gridSize, float fParticleRadius, float
 	params.worldOrigin = make_float3(-1.0f, -1.0f, -1.0f);
 	params.cellSize = make_float3(params.particleRadius * 2.0f, params.particleRadius * 2.0f, params.particleRadius * 2.0f);
 
-	params.spring = 0.5f;
+	params.spring = 0.2f;
 	params.damping = 0.02f;
-	params.shear = 0.1f;
+	params.shear = 0.01f;
 	params.attraction = 0.0f;
 	params.boundaryDamping = -0.5f;
 

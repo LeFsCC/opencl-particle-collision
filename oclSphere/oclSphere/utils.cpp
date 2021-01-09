@@ -13,10 +13,8 @@ static cl_program cpParticles;
 static cl_command_queue cqDefaultCommandQue;
 
 static cl_kernel
-ckBitonicSortLocal,
 ckBitonicSortLocal1,
-ckBitonicMergeGlobal,
-ckBitonicMergeLocal;
+ckBitonicMergeGlobal;
 
 static cl_program cpBitonicSort;
 
@@ -120,20 +118,12 @@ extern "C" void setParametersHost(sim_params * host_params) {
     memcpy(&h_params, host_params, sizeof(sim_params));
 }
  
-extern"C" void bitonicSort(
-    cl_command_queue cqCommandQueue,
-    cl_mem d_DstKey,
-    cl_mem d_DstVal,
-    cl_mem d_SrcKey,
-    cl_mem d_SrcVal, 
-    unsigned int batch,
-    unsigned int arrayLength,
-    unsigned int dir
-) {
+extern"C" void bitonicSort(cl_command_queue cqCommandQueue,cl_mem d_DstKey, cl_mem d_DstVal,cl_mem d_SrcKey,cl_mem d_SrcVal, 
+    unsigned int batch, unsigned int arrayLength, unsigned int dir) {
+
     if (arrayLength < 2)
         return;
     oclCheckError(cl_uint(arrayLength & (arrayLength - 1)) == 1, CL_SUCCESS);
-
     if (!cqCommandQueue)
         cqCommandQueue = cqDefaultCommandQue;
 
@@ -141,80 +131,39 @@ extern"C" void bitonicSort(
 
     cl_int ciErrNum;
     size_t localWorkSize, globalWorkSize;
+    ciErrNum = clSetKernelArg(ckBitonicSortLocal1, 0, sizeof(cl_mem), (void*)&d_DstKey);
+    ciErrNum |= clSetKernelArg(ckBitonicSortLocal1, 1, sizeof(cl_mem), (void*)&d_DstVal);
+    ciErrNum |= clSetKernelArg(ckBitonicSortLocal1, 2, sizeof(cl_mem), (void*)&d_SrcKey);
+    ciErrNum |= clSetKernelArg(ckBitonicSortLocal1, 3, sizeof(cl_mem), (void*)&d_SrcVal);
+    oclCheckError(ciErrNum, CL_SUCCESS);
 
-    if (arrayLength <= LOCAL_SIZE_LIMIT)
+    localWorkSize = LOCAL_SIZE_LIMIT / 2;
+    globalWorkSize = batch * arrayLength / 2;
+    ciErrNum = clEnqueueNDRangeKernel(cqCommandQueue, ckBitonicSortLocal1, 1, NULL, &globalWorkSize, &localWorkSize, 0, NULL, NULL);
+    oclCheckError(ciErrNum, CL_SUCCESS);
+
+    for (unsigned int size = 2 * LOCAL_SIZE_LIMIT; size <= arrayLength; size <<= 1)
     {
-        oclCheckError((batch * arrayLength) % LOCAL_SIZE_LIMIT == 0, CL_SUCCESS);
-        ciErrNum = clSetKernelArg(ckBitonicSortLocal, 0, sizeof(cl_mem), (void*)&d_DstKey);
-        ciErrNum |= clSetKernelArg(ckBitonicSortLocal, 1, sizeof(cl_mem), (void*)&d_DstVal);
-        ciErrNum |= clSetKernelArg(ckBitonicSortLocal, 2, sizeof(cl_mem), (void*)&d_SrcKey);
-        ciErrNum |= clSetKernelArg(ckBitonicSortLocal, 3, sizeof(cl_mem), (void*)&d_SrcVal);
-        ciErrNum |= clSetKernelArg(ckBitonicSortLocal, 4, sizeof(cl_uint), (void*)&arrayLength);
-        ciErrNum |= clSetKernelArg(ckBitonicSortLocal, 5, sizeof(cl_uint), (void*)&dir);
-        oclCheckError(ciErrNum, CL_SUCCESS);
-
-        localWorkSize = LOCAL_SIZE_LIMIT / 2;
-        globalWorkSize = batch * arrayLength / 2;
-        ciErrNum = clEnqueueNDRangeKernel(cqCommandQueue, ckBitonicSortLocal, 1, NULL, &globalWorkSize, &localWorkSize, 0, NULL, NULL);
-        oclCheckError(ciErrNum, CL_SUCCESS);
-    }
-    else
-    {
-        //Launch bitonicSortLocal1
-        ciErrNum = clSetKernelArg(ckBitonicSortLocal1, 0, sizeof(cl_mem), (void*)&d_DstKey);
-        ciErrNum |= clSetKernelArg(ckBitonicSortLocal1, 1, sizeof(cl_mem), (void*)&d_DstVal);
-        ciErrNum |= clSetKernelArg(ckBitonicSortLocal1, 2, sizeof(cl_mem), (void*)&d_SrcKey);
-        ciErrNum |= clSetKernelArg(ckBitonicSortLocal1, 3, sizeof(cl_mem), (void*)&d_SrcVal);
-        oclCheckError(ciErrNum, CL_SUCCESS);
-
-        localWorkSize = LOCAL_SIZE_LIMIT / 2;
-        globalWorkSize = batch * arrayLength / 2;
-        ciErrNum = clEnqueueNDRangeKernel(cqCommandQueue, ckBitonicSortLocal1, 1, NULL, &globalWorkSize, &localWorkSize, 0, NULL, NULL);
-        oclCheckError(ciErrNum, CL_SUCCESS);
-
-        for (unsigned int size = 2 * LOCAL_SIZE_LIMIT; size <= arrayLength; size <<= 1)
+        for (unsigned stride = size / 2; stride > 0; stride >>= 1)
         {
-            for (unsigned stride = size / 2; stride > 0; stride >>= 1)
+            if (stride >= LOCAL_SIZE_LIMIT)
             {
-                if (stride >= LOCAL_SIZE_LIMIT)
-                {
-                    //Launch bitonicMergeGlobal
-                    ciErrNum = clSetKernelArg(ckBitonicMergeGlobal, 0, sizeof(cl_mem), (void*)&d_DstKey);
-                    ciErrNum |= clSetKernelArg(ckBitonicMergeGlobal, 1, sizeof(cl_mem), (void*)&d_DstVal);
-                    ciErrNum |= clSetKernelArg(ckBitonicMergeGlobal, 2, sizeof(cl_mem), (void*)&d_DstKey);
-                    ciErrNum |= clSetKernelArg(ckBitonicMergeGlobal, 3, sizeof(cl_mem), (void*)&d_DstVal);
-                    ciErrNum |= clSetKernelArg(ckBitonicMergeGlobal, 4, sizeof(cl_uint), (void*)&arrayLength);
-                    ciErrNum |= clSetKernelArg(ckBitonicMergeGlobal, 5, sizeof(cl_uint), (void*)&size);
-                    ciErrNum |= clSetKernelArg(ckBitonicMergeGlobal, 6, sizeof(cl_uint), (void*)&stride);
-                    ciErrNum |= clSetKernelArg(ckBitonicMergeGlobal, 7, sizeof(cl_uint), (void*)&dir);
-                    oclCheckError(ciErrNum, CL_SUCCESS);
+                //Launch merge
+                ciErrNum = clSetKernelArg(ckBitonicMergeGlobal, 0, sizeof(cl_mem), (void*)&d_DstKey);
+                ciErrNum |= clSetKernelArg(ckBitonicMergeGlobal, 1, sizeof(cl_mem), (void*)&d_DstVal);
+                ciErrNum |= clSetKernelArg(ckBitonicMergeGlobal, 2, sizeof(cl_mem), (void*)&d_DstKey);
+                ciErrNum |= clSetKernelArg(ckBitonicMergeGlobal, 3, sizeof(cl_mem), (void*)&d_DstVal);
+                ciErrNum |= clSetKernelArg(ckBitonicMergeGlobal, 4, sizeof(cl_uint), (void*)&arrayLength);
+                ciErrNum |= clSetKernelArg(ckBitonicMergeGlobal, 5, sizeof(cl_uint), (void*)&size);
+                ciErrNum |= clSetKernelArg(ckBitonicMergeGlobal, 6, sizeof(cl_uint), (void*)&stride);
+                ciErrNum |= clSetKernelArg(ckBitonicMergeGlobal, 7, sizeof(cl_uint), (void*)&dir);
+                oclCheckError(ciErrNum, CL_SUCCESS);
 
-                    localWorkSize = LOCAL_SIZE_LIMIT / 4;
-                    globalWorkSize = batch * arrayLength / 2;
+                localWorkSize = LOCAL_SIZE_LIMIT / 4;
+                globalWorkSize = batch * arrayLength / 2;
 
-                    ciErrNum = clEnqueueNDRangeKernel(cqCommandQueue, ckBitonicMergeGlobal, 1, NULL, &globalWorkSize, &localWorkSize, 0, NULL, NULL);
-                    oclCheckError(ciErrNum, CL_SUCCESS);
-                }
-                else
-                {
-                    //Launch bitonicMergeLocal
-                    ciErrNum = clSetKernelArg(ckBitonicMergeLocal, 0, sizeof(cl_mem), (void*)&d_DstKey);
-                    ciErrNum |= clSetKernelArg(ckBitonicMergeLocal, 1, sizeof(cl_mem), (void*)&d_DstVal);
-                    ciErrNum |= clSetKernelArg(ckBitonicMergeLocal, 2, sizeof(cl_mem), (void*)&d_DstKey);
-                    ciErrNum |= clSetKernelArg(ckBitonicMergeLocal, 3, sizeof(cl_mem), (void*)&d_DstVal);
-                    ciErrNum |= clSetKernelArg(ckBitonicMergeLocal, 4, sizeof(cl_uint), (void*)&arrayLength);
-                    ciErrNum |= clSetKernelArg(ckBitonicMergeLocal, 5, sizeof(cl_uint), (void*)&stride);
-                    ciErrNum |= clSetKernelArg(ckBitonicMergeLocal, 6, sizeof(cl_uint), (void*)&size);
-                    ciErrNum |= clSetKernelArg(ckBitonicMergeLocal, 7, sizeof(cl_uint), (void*)&dir);
-                    oclCheckError(ciErrNum, CL_SUCCESS);
-
-                    localWorkSize = LOCAL_SIZE_LIMIT / 2;
-                    globalWorkSize = batch * arrayLength / 2;
-
-                    ciErrNum = clEnqueueNDRangeKernel(cqCommandQueue, ckBitonicMergeLocal, 1, NULL, &globalWorkSize, &localWorkSize, 0, NULL, NULL);
-                    oclCheckError(ciErrNum, CL_SUCCESS);
-                    break;
-                }
+                ciErrNum = clEnqueueNDRangeKernel(cqCommandQueue, ckBitonicMergeGlobal, 1, NULL, &globalWorkSize, &localWorkSize, 0, NULL, NULL);
+                oclCheckError(ciErrNum, CL_SUCCESS);
             }
         }
     }
@@ -231,17 +180,11 @@ extern "C" void initBitonicSort(cl_context cxGPUContext, cl_command_queue cqPara
     ciErrNum = clBuildProgram(cpBitonicSort, 0, NULL, NULL, NULL, NULL);
     oclCheckError(ciErrNum, CL_SUCCESS);
 
-    ckBitonicSortLocal = clCreateKernel(cpBitonicSort, "bitonicSortLocal", &ciErrNum);
-    oclCheckError(ciErrNum, CL_SUCCESS);
     ckBitonicSortLocal1 = clCreateKernel(cpBitonicSort, "bitonicSortLocal1", &ciErrNum);
     oclCheckError(ciErrNum, CL_SUCCESS);
     ckBitonicMergeGlobal = clCreateKernel(cpBitonicSort, "bitonicMergeGlobal", &ciErrNum);
     oclCheckError(ciErrNum, CL_SUCCESS);
-    ckBitonicMergeLocal = clCreateKernel(cpBitonicSort, "bitonicMergeLocal", &ciErrNum);
-    oclCheckError(ciErrNum, CL_SUCCESS);
-
     cqDefaultCommandQue = cqParamCommandQue;
-
     free(cBitonicSort);
 }
 
