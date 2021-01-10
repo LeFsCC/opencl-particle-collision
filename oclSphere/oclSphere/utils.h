@@ -6,13 +6,16 @@
 #include <cl/cl.h>
 #include "SphereSystem.h"
 #include <fstream>
-#define check_error(a, b) __oclCheckErrorEX(a, b, 0, __FILE__ , __LINE__)
+#define check_error(a, b) ocl_check_error(a, b, 0, __FILE__ , __LINE__)
 typedef cl_mem cl_mem;
 typedef unsigned int uint;
 #define MAX(a, b) ((a > b) ? a : b)
 #define MIN(a, b) ((a < b) ? a : b)
 #define CLAMP(a, b, c) MIN(MAX(a, b), c)
-static const unsigned int LOCAL_SIZE_LIMIT = 512U;
+
+
+
+static const uint LOCAL_SIZE_LIMIT = 512U;
 
 static cl_kernel ckIntegrate, ckCalcHash, ckMemset, ckFindCellBoundsAndReorder, ckCollide;
 static cl_kernel ckBitonicSortLocal1, ckBitonicMergeGlobal;
@@ -32,14 +35,11 @@ extern "C" void find_cell_bounds_and_reorder(cl_mem d_CellStart, cl_mem d_CellEn
     uint numParticles, uint numCells);
 extern "C" void collide(cl_mem d_Vel, cl_mem d_ReorderedPos, cl_mem d_ReorderedVel, cl_mem d_Index,
     cl_mem d_CellStart, cl_mem d_CellEnd, uint   numParticles, uint   numCells);
-static size_t uSnap(size_t a, size_t b);
-
 
 extern"C" void merge_sort(cl_command_queue cqCommandQueue, cl_mem d_DstKey, cl_mem d_DstVal, cl_mem d_SrcKey,
     cl_mem d_SrcVal, unsigned int batch, unsigned int arrayLength, unsigned int dir);
 
-
-inline void __oclCheckErrorEX(cl_int iSample, cl_int iReference, void (*pCleanup)(int), const char* cFile, const int iLine) {
+static void ocl_check_error(cl_int iSample, cl_int iReference, void (*pCleanup)(int), const char* cFile, const int iLine) {
     if (iReference != iSample) {
         iSample = (iSample == 0) ? -9999 : iSample;
 
@@ -52,4 +52,13 @@ inline void __oclCheckErrorEX(cl_int iSample, cl_int iReference, void (*pCleanup
     }
 }
 
+static size_t get_exact_div_par(size_t a, size_t b) {
+    if (a % b == 0) {
+        return a;
+    }
+    else {
+        size_t c = a - a % b;
+        return c + b;
+    }
+}
 #endif UTILS_H

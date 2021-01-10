@@ -5,8 +5,8 @@
 #include <cl/cl.h>
 
 typedef unsigned int uint;
-#define check_error(a, b) __oclCheckErrorEX(a, b, 0, __FILE__ , __LINE__)
-static size_t wgSize = 64;
+#define check_error(a, b) ocl_check_error(a, b, 0, __FILE__ , __LINE__)
+static size_t world_size = 64;
 
 struct float3 {
     float x, y, z;
@@ -42,19 +42,16 @@ typedef struct {
 static inline  float3 make_float3(float x, float y, float z) {
     float3 t; t.x = x; t.y = y; t.z = z; return t;
 }
- 
+
 class Spheres {
 
 public:
-    enum ParticleArray {
-        POSITION,
-        VELOCITY,
-    };
+    enum attr_type { POS, VEL};
 	Spheres(uint, uint3);
     void init_params();
     void init_data();
-    float* get_array(ParticleArray array);
-    void set_array(ParticleArray array, const float* data, int start, int count);
+    float* get_array(attr_type array);
+    void set_array(attr_type array, const float* data, int start, int count);
     void reset();
     void update(float deltaTime);
     float* get_pos() { return cpu_pos; }
@@ -64,12 +61,6 @@ protected:
 
     float* cpu_pos;
     float* cpu_vel;
-    float* cpu_reco_pos;
-    float* cpu_reco_vel;
-    uint* cpu_cell_start;
-    uint* cpu_cell_end;
-    uint* cpu_hash;
-    uint* cpu_index;
 
     cl_mem          gpu_pos;
     cl_mem          gpu_vel;
