@@ -2,16 +2,12 @@
 #include <iostream>
 #include <fstream>
 
-cl_platform_id cpPlatform;
-cl_context cxGPUContext;
-cl_command_queue cqCommandQueue;
+cl_context context_cl;
+cl_command_queue cmdq;
 static cl_mem params;
-static sim_params h_params;
-static cl_program cpParticles;
+static cl_program particle_clprogram, sort_clprogram;
+static cl_command_queue default_cmdq;
 
-
-static cl_command_queue cqDefaultCommandQue;
-static cl_program cpBitonicSort;
 
 char* clcode(const char* fileName, size_t* length) {
     FILE* fp = fopen(fileName, "rb");
@@ -26,130 +22,127 @@ char* clcode(const char* fileName, size_t* length) {
     return clcode;
 }
 
-extern "C" void prepareOpenCLPlatform() {
+extern "C" void prepare_ocl_platform() {
     cl_uint counts;
     cl_platform_id* cpPlatform;
     cl_device_id cdDevices;
-    cl_int ciErrNum;
+    cl_int error_code;
 
-    ciErrNum = clGetPlatformIDs(0, 0, &counts);
-    oclCheckError(ciErrNum, CL_SUCCESS);
+    error_code = clGetPlatformIDs(0, 0, &counts);
+    check_error(error_code, 0);
 
     cpPlatform =  new cl_platform_id[counts];
-    ciErrNum = clGetPlatformIDs(counts, cpPlatform, NULL);
-    oclCheckError(ciErrNum, CL_SUCCESS);
+    error_code = clGetPlatformIDs(counts, cpPlatform, NULL);
+    check_error(error_code, 0);
 
-    ciErrNum = clGetDeviceIDs(cpPlatform[1], CL_DEVICE_TYPE_GPU, 1, &cdDevices, NULL);
-    oclCheckError(ciErrNum, CL_SUCCESS);
+    error_code = clGetDeviceIDs(cpPlatform[1], CL_DEVICE_TYPE_GPU, 1, &cdDevices, NULL);
+    check_error(error_code, 0);
 
-    cxGPUContext = clCreateContext(NULL, 1, &cdDevices, 0, 0, &ciErrNum);
-    oclCheckError(ciErrNum, CL_SUCCESS);
+    context_cl = clCreateContext(NULL, 1, &cdDevices, 0, 0, &error_code);
+    check_error(error_code, 0);
 
-    cqCommandQueue = clCreateCommandQueue(cxGPUContext, cdDevices, 0, &ciErrNum);
-    oclCheckError(ciErrNum, CL_SUCCESS);
+    cmdq = clCreateCommandQueue(context_cl, cdDevices, 0, &error_code);
+    check_error(error_code, 0);
 
     size_t kernelLength;
     char* cParticles = clcode("particle.cl", &kernelLength);
-    oclCheckError(cParticles != NULL, 1);
+    check_error(cParticles != NULL, 1);
 
-    cpParticles = clCreateProgramWithSource(cxGPUContext, 1, (const char**)&cParticles, NULL, &ciErrNum);
-    oclCheckError(ciErrNum, CL_SUCCESS);
+    particle_clprogram = clCreateProgramWithSource(context_cl, 1, (const char**)&cParticles, NULL, &error_code);
+    check_error(error_code, 0);
 
-    ciErrNum = clBuildProgram(cpParticles, 0, 0, NULL, NULL, NULL);
-    oclCheckError(ciErrNum, CL_SUCCESS);
+    error_code = clBuildProgram(particle_clprogram, 0, 0, NULL, NULL, NULL);
+    check_error(error_code, 0);
 
-    ckIntegrate = clCreateKernel(cpParticles, "integrate", &ciErrNum);
-    oclCheckError(ciErrNum, CL_SUCCESS);
+    ckIntegrate = clCreateKernel(particle_clprogram, "integrate", &error_code);
+    check_error(error_code, 0);
 
-    ckCalcHash = clCreateKernel(cpParticles, "calcHash", &ciErrNum);
-    oclCheckError(ciErrNum, CL_SUCCESS);
+    ckCalcHash = clCreateKernel(particle_clprogram, "calcHash", &error_code);
+    check_error(error_code, 0);
 
-    ckMemset = clCreateKernel(cpParticles, "Memset", &ciErrNum);
-    oclCheckError(ciErrNum, CL_SUCCESS);
+    ckMemset = clCreateKernel(particle_clprogram, "Memset", &error_code);
+    check_error(error_code, 0);
 
-    ckFindCellBoundsAndReorder = clCreateKernel(cpParticles, "findCellBoundsAndReorder", &ciErrNum);
-    oclCheckError(ciErrNum, CL_SUCCESS);
+    ckFindCellBoundsAndReorder = clCreateKernel(particle_clprogram, "findCellBoundsAndReorder", &error_code);
+    check_error(error_code, 0);
 
-    ckCollide = clCreateKernel(cpParticles, "collide", &ciErrNum);
-    oclCheckError(ciErrNum, CL_SUCCESS);
+    ckCollide = clCreateKernel(particle_clprogram, "collide", &error_code);
+    check_error(error_code, 0);
 
-    allocateArray(&params, sizeof(sim_params));
-    cqDefaultCommandQue = cqCommandQueue;
+    create_gpu_buffer(&params, sizeof(sim_params));
+    default_cmdq = cmdq;
 
-    char* cBitonicSort = clcode("BitonicSort_b.cl", &kernelLength);
-    cpBitonicSort = clCreateProgramWithSource(cxGPUContext, 1, (const char**)&cBitonicSort, &kernelLength, &ciErrNum);
-    oclCheckError(ciErrNum, CL_SUCCESS);
+    char* cBitonicSort = clcode("sort.cl", &kernelLength);
+    sort_clprogram = clCreateProgramWithSource(context_cl, 1, (const char**)&cBitonicSort, &kernelLength, &error_code);
+    check_error(error_code, 0);
 
-    ciErrNum = clBuildProgram(cpBitonicSort, 0, NULL, NULL, NULL, NULL);
-    oclCheckError(ciErrNum, CL_SUCCESS);
+    error_code = clBuildProgram(sort_clprogram, 0, NULL, NULL, NULL, NULL);
+    check_error(error_code, 0);
 
-    ckBitonicSortLocal1 = clCreateKernel(cpBitonicSort, "bitonicSortLocal1", &ciErrNum);
-    oclCheckError(ciErrNum, CL_SUCCESS);
+    ckBitonicSortLocal1 = clCreateKernel(sort_clprogram, "bitonicSortLocal1", &error_code);
+    check_error(error_code, 0);
 
-    ckBitonicMergeGlobal = clCreateKernel(cpBitonicSort, "bitonicMergeGlobal", &ciErrNum);
-    oclCheckError(ciErrNum, CL_SUCCESS);
+    ckBitonicMergeGlobal = clCreateKernel(sort_clprogram, "bitonicMergeGlobal", &error_code);
+    check_error(error_code, 0);
 
-    cqDefaultCommandQue = cqCommandQueue;
+    default_cmdq = cmdq;
 
     free(cParticles);
     free(cBitonicSort);
 }
 
-extern "C" void allocateArray(cl_mem * memObj, size_t size) {
-    cl_int ciErrNum;
-    *memObj = clCreateBuffer(cxGPUContext, CL_MEM_READ_WRITE, size, NULL, &ciErrNum);
-    oclCheckError(ciErrNum, CL_SUCCESS);
+extern "C" void create_gpu_buffer(cl_mem * memObj, size_t size) {
+    cl_int error_code;
+    *memObj = clCreateBuffer(context_cl, CL_MEM_READ_WRITE, size, NULL, &error_code);
+    check_error(error_code, 0);
 }
 
-extern "C" void freeArray(cl_mem memObj) {
-    cl_int ciErrNum;
-    ciErrNum = clReleaseMemObject(memObj);
-    oclCheckError(ciErrNum, CL_SUCCESS);
+extern "C" void release_gpu_buffer(cl_mem memObj) {
+    cl_int error_code;
+    error_code = clReleaseMemObject(memObj);
+    check_error(error_code, 0);
 }
 
-extern "C" void copyArrayFromDevice(void* hostPtr, cl_mem memObj, size_t size) {
-    cl_int ciErrNum;
-    ciErrNum = clEnqueueReadBuffer(cqCommandQueue, memObj, CL_TRUE, 0, size, hostPtr, 0, NULL, NULL);
-    oclCheckError(ciErrNum, CL_SUCCESS);
+extern "C" void get_data_from_gpu(void* hostPtr, cl_mem memObj, size_t size) {
+    cl_int error_code;
+    error_code = clEnqueueReadBuffer(cmdq, memObj, CL_TRUE, 0, size, hostPtr, 0, NULL, NULL);
+    check_error(error_code, 0);
 }
 
-extern "C" void copyArrayToDevice(cl_mem memObj, const void* hostPtr, size_t offset, size_t size) {
-    cl_int ciErrNum;
-    ciErrNum = clEnqueueWriteBuffer(cqCommandQueue, memObj, CL_TRUE, 0, size, hostPtr, 0, NULL, NULL);
-    oclCheckError(ciErrNum, CL_SUCCESS);
+extern "C" void set_data_on_gpu(cl_mem memObj, const void* hostPtr, size_t offset, size_t size) {
+    cl_int error_code;
+    error_code = clEnqueueWriteBuffer(cmdq, memObj, CL_TRUE, 0, size, hostPtr, 0, NULL, NULL);
+    check_error(error_code, 0);
 }
 
-extern "C" void setParameters(sim_params * m_params) {
-    copyArrayToDevice(params, m_params, 0, sizeof(sim_params));
-}
-
-extern "C" void setParametersHost(sim_params * host_params) {
-    memcpy(&h_params, host_params, sizeof(sim_params));
+extern "C" void set_constants(sim_params * m_params) {
+    set_data_on_gpu(params, m_params, 0, sizeof(sim_params));
 }
  
-extern"C" void bitonicSort(cl_command_queue cqCommandQueue,cl_mem d_DstKey, cl_mem d_DstVal,cl_mem d_SrcKey,cl_mem d_SrcVal, 
-    unsigned int batch, unsigned int arrayLength, unsigned int dir) {
+extern"C" void merge_sort(cl_command_queue cqCommandQueue,cl_mem d_DstKey, cl_mem d_DstVal,cl_mem d_SrcKey,cl_mem d_SrcVal, 
+    uint batch, uint arrayLength, uint dir) {
 
     if (arrayLength < 2)
         return;
-    oclCheckError(cl_uint(arrayLength & (arrayLength - 1)) == 1, CL_SUCCESS);
+    check_error(cl_uint(arrayLength & (arrayLength - 1)) == 1, 0);
+
     if (!cqCommandQueue)
-        cqCommandQueue = cqDefaultCommandQue;
+        cqCommandQueue = default_cmdq;
 
     dir = (dir != 0);
 
-    cl_int ciErrNum;
+    cl_int error_code;
     size_t localWorkSize, globalWorkSize;
-    ciErrNum = clSetKernelArg(ckBitonicSortLocal1, 0, sizeof(cl_mem), (void*)&d_DstKey);
-    ciErrNum |= clSetKernelArg(ckBitonicSortLocal1, 1, sizeof(cl_mem), (void*)&d_DstVal);
-    ciErrNum |= clSetKernelArg(ckBitonicSortLocal1, 2, sizeof(cl_mem), (void*)&d_SrcKey);
-    ciErrNum |= clSetKernelArg(ckBitonicSortLocal1, 3, sizeof(cl_mem), (void*)&d_SrcVal);
-    oclCheckError(ciErrNum, CL_SUCCESS);
+    error_code = clSetKernelArg(ckBitonicSortLocal1, 0, sizeof(cl_mem), (void*)&d_DstKey);
+    error_code |= clSetKernelArg(ckBitonicSortLocal1, 1, sizeof(cl_mem), (void*)&d_DstVal);
+    error_code |= clSetKernelArg(ckBitonicSortLocal1, 2, sizeof(cl_mem), (void*)&d_SrcKey);
+    error_code |= clSetKernelArg(ckBitonicSortLocal1, 3, sizeof(cl_mem), (void*)&d_SrcVal);
+    check_error(error_code, 0);
 
     localWorkSize = LOCAL_SIZE_LIMIT / 2;
     globalWorkSize = batch * arrayLength / 2;
-    ciErrNum = clEnqueueNDRangeKernel(cqCommandQueue, ckBitonicSortLocal1, 1, NULL, &globalWorkSize, &localWorkSize, 0, NULL, NULL);
-    oclCheckError(ciErrNum, CL_SUCCESS);
+    error_code = clEnqueueNDRangeKernel(cqCommandQueue, ckBitonicSortLocal1, 1, NULL, &globalWorkSize, &localWorkSize, 0, NULL, NULL);
+    check_error(error_code, 0);
 
     for (unsigned int size = 2 * LOCAL_SIZE_LIMIT; size <= arrayLength; size <<= 1)
     {
@@ -158,21 +151,21 @@ extern"C" void bitonicSort(cl_command_queue cqCommandQueue,cl_mem d_DstKey, cl_m
             if (stride >= LOCAL_SIZE_LIMIT)
             {
                 //Launch merge
-                ciErrNum = clSetKernelArg(ckBitonicMergeGlobal, 0, sizeof(cl_mem), (void*)&d_DstKey);
-                ciErrNum |= clSetKernelArg(ckBitonicMergeGlobal, 1, sizeof(cl_mem), (void*)&d_DstVal);
-                ciErrNum |= clSetKernelArg(ckBitonicMergeGlobal, 2, sizeof(cl_mem), (void*)&d_DstKey);
-                ciErrNum |= clSetKernelArg(ckBitonicMergeGlobal, 3, sizeof(cl_mem), (void*)&d_DstVal);
-                ciErrNum |= clSetKernelArg(ckBitonicMergeGlobal, 4, sizeof(cl_uint), (void*)&arrayLength);
-                ciErrNum |= clSetKernelArg(ckBitonicMergeGlobal, 5, sizeof(cl_uint), (void*)&size);
-                ciErrNum |= clSetKernelArg(ckBitonicMergeGlobal, 6, sizeof(cl_uint), (void*)&stride);
-                ciErrNum |= clSetKernelArg(ckBitonicMergeGlobal, 7, sizeof(cl_uint), (void*)&dir);
-                oclCheckError(ciErrNum, CL_SUCCESS);
+                error_code = clSetKernelArg(ckBitonicMergeGlobal, 0, sizeof(cl_mem), (void*)&d_DstKey);
+                error_code |= clSetKernelArg(ckBitonicMergeGlobal, 1, sizeof(cl_mem), (void*)&d_DstVal);
+                error_code |= clSetKernelArg(ckBitonicMergeGlobal, 2, sizeof(cl_mem), (void*)&d_DstKey);
+                error_code |= clSetKernelArg(ckBitonicMergeGlobal, 3, sizeof(cl_mem), (void*)&d_DstVal);
+                error_code |= clSetKernelArg(ckBitonicMergeGlobal, 4, sizeof(cl_uint), (void*)&arrayLength);
+                error_code |= clSetKernelArg(ckBitonicMergeGlobal, 5, sizeof(cl_uint), (void*)&size);
+                error_code |= clSetKernelArg(ckBitonicMergeGlobal, 6, sizeof(cl_uint), (void*)&stride);
+                error_code |= clSetKernelArg(ckBitonicMergeGlobal, 7, sizeof(cl_uint), (void*)&dir);
+                check_error(error_code, 0);
 
                 localWorkSize = LOCAL_SIZE_LIMIT / 4;
                 globalWorkSize = batch * arrayLength / 2;
 
-                ciErrNum = clEnqueueNDRangeKernel(cqCommandQueue, ckBitonicMergeGlobal, 1, NULL, &globalWorkSize, &localWorkSize, 0, NULL, NULL);
-                oclCheckError(ciErrNum, CL_SUCCESS);
+                error_code = clEnqueueNDRangeKernel(cqCommandQueue, ckBitonicMergeGlobal, 1, NULL, &globalWorkSize, &localWorkSize, 0, NULL, NULL);
+                check_error(error_code, 0);
             }
         }
     }
@@ -182,93 +175,93 @@ static size_t uSnap(size_t a, size_t b) {
     return ((a % b) == 0) ? a : (a - (a % b) + b);
 }
 
-extern "C" void integrateSystem(cl_mem d_Pos, cl_mem d_Vel, float deltaTime, uint numParticles) {
-    cl_int ciErrNum;
+extern "C" void refresh_particles(cl_mem d_Pos, cl_mem d_Vel, float deltaTime, uint numParticles) {
+    cl_int error_code;
     size_t globalWorkSize = uSnap(numParticles, wgSize);
 
-    ciErrNum = clSetKernelArg(ckIntegrate, 0, sizeof(cl_mem), (void*)&d_Pos);
-    oclCheckError(ciErrNum, CL_SUCCESS);
+    error_code = clSetKernelArg(ckIntegrate, 0, sizeof(cl_mem), (void*)&d_Pos);
+    check_error(error_code, 0);
 
-    ciErrNum |= clSetKernelArg(ckIntegrate, 1, sizeof(cl_mem), (void*)&d_Vel);
-    oclCheckError(ciErrNum, CL_SUCCESS);
-    ciErrNum |= clSetKernelArg(ckIntegrate, 2, sizeof(cl_mem), (void*)&params);
-    oclCheckError(ciErrNum, CL_SUCCESS);
-    ciErrNum |= clSetKernelArg(ckIntegrate, 3, sizeof(float), (void*)&deltaTime);
-    oclCheckError(ciErrNum, CL_SUCCESS);
-    ciErrNum |= clSetKernelArg(ckIntegrate, 4, sizeof(uint), (void*)&numParticles);
-    oclCheckError(ciErrNum, CL_SUCCESS);
+    error_code |= clSetKernelArg(ckIntegrate, 1, sizeof(cl_mem), (void*)&d_Vel);
+    check_error(error_code, 0);
+    error_code |= clSetKernelArg(ckIntegrate, 2, sizeof(cl_mem), (void*)&params);
+    check_error(error_code, 0);
+    error_code |= clSetKernelArg(ckIntegrate, 3, sizeof(float), (void*)&deltaTime);
+    check_error(error_code, 0);
+    error_code |= clSetKernelArg(ckIntegrate, 4, sizeof(uint), (void*)&numParticles);
+    check_error(error_code, 0);
 
-    ciErrNum = clEnqueueNDRangeKernel(cqDefaultCommandQue, ckIntegrate, 1, NULL, &globalWorkSize, &wgSize, 0, NULL, NULL);
-    oclCheckError(ciErrNum, CL_SUCCESS);
+    error_code = clEnqueueNDRangeKernel(default_cmdq, ckIntegrate, 1, NULL, &globalWorkSize, &wgSize, 0, NULL, NULL);
+    check_error(error_code, 0);
 }
 
-extern "C" void calcHash(cl_mem d_Hash, cl_mem d_Index, cl_mem d_Pos, int numParticles) {
-    cl_int ciErrNum;
+extern "C" void reckon_hash(cl_mem d_Hash, cl_mem d_Index, cl_mem d_Pos, int numParticles) {
+    cl_int error_code;
     size_t globalWorkSize = uSnap(numParticles, wgSize);
 
-    ciErrNum = clSetKernelArg(ckCalcHash, 0, sizeof(cl_mem), (void*)&d_Hash);
-    ciErrNum |= clSetKernelArg(ckCalcHash, 1, sizeof(cl_mem), (void*)&d_Index);
-    ciErrNum |= clSetKernelArg(ckCalcHash, 2, sizeof(cl_mem), (void*)&d_Pos);
-    ciErrNum |= clSetKernelArg(ckCalcHash, 3, sizeof(cl_mem), (void*)&params);
-    ciErrNum |= clSetKernelArg(ckCalcHash, 4, sizeof(uint), (void*)&numParticles);
-    oclCheckError(ciErrNum, CL_SUCCESS);
+    error_code = clSetKernelArg(ckCalcHash, 0, sizeof(cl_mem), (void*)&d_Hash);
+    error_code |= clSetKernelArg(ckCalcHash, 1, sizeof(cl_mem), (void*)&d_Index);
+    error_code |= clSetKernelArg(ckCalcHash, 2, sizeof(cl_mem), (void*)&d_Pos);
+    error_code |= clSetKernelArg(ckCalcHash, 3, sizeof(cl_mem), (void*)&params);
+    error_code |= clSetKernelArg(ckCalcHash, 4, sizeof(uint), (void*)&numParticles);
+    check_error(error_code, 0);
 
-    ciErrNum = clEnqueueNDRangeKernel(cqDefaultCommandQue, ckCalcHash, 1, NULL, &globalWorkSize, &wgSize, 0, NULL, NULL);
-    oclCheckError(ciErrNum, CL_SUCCESS);
+    error_code = clEnqueueNDRangeKernel(default_cmdq, ckCalcHash, 1, NULL, &globalWorkSize, &wgSize, 0, NULL, NULL);
+    check_error(error_code, 0);
 }
 
-static void memsetOCL(cl_mem d_Data, uint val, uint N) {
-    cl_int ciErrNum;
+static void memset_gpu(cl_mem d_Data, uint val, uint N) {
+    cl_int error_code;
     size_t globalWorkSize = uSnap(N, wgSize);
 
-    ciErrNum = clSetKernelArg(ckMemset, 0, sizeof(cl_mem), (void*)&d_Data);
-    ciErrNum |= clSetKernelArg(ckMemset, 1, sizeof(cl_uint), (void*)&val);
-    ciErrNum |= clSetKernelArg(ckMemset, 2, sizeof(cl_uint), (void*)&N);
-    oclCheckError(ciErrNum, CL_SUCCESS);
+    error_code = clSetKernelArg(ckMemset, 0, sizeof(cl_mem), (void*)&d_Data);
+    error_code |= clSetKernelArg(ckMemset, 1, sizeof(cl_uint), (void*)&val);
+    error_code |= clSetKernelArg(ckMemset, 2, sizeof(cl_uint), (void*)&N);
+    check_error(error_code, 0);
 
-    ciErrNum = clEnqueueNDRangeKernel(cqDefaultCommandQue, ckMemset, 1, NULL, &globalWorkSize, &wgSize, 0, NULL, NULL);
-    oclCheckError(ciErrNum, CL_SUCCESS);
+    error_code = clEnqueueNDRangeKernel(default_cmdq, ckMemset, 1, NULL, &globalWorkSize, &wgSize, 0, NULL, NULL);
+    check_error(error_code, 0);
 }
 
-extern "C" void findCellBoundsAndReorder(cl_mem d_CellStart, cl_mem d_CellEnd, cl_mem d_ReorderedPos,
+extern "C" void find_cell_bounds_and_reorder(cl_mem d_CellStart, cl_mem d_CellEnd, cl_mem d_ReorderedPos,
     cl_mem d_ReorderedVel, cl_mem d_Hash, cl_mem d_Index, cl_mem d_Pos, cl_mem d_Vel,
     uint numParticles, uint numCells) {
-    cl_int ciErrNum;
-    memsetOCL(d_CellStart, 0xFFFFFFFFU, numCells);
+    cl_int error_code;
+    memset_gpu(d_CellStart, 0xFFFFFFFFU, numCells);
     size_t globalWorkSize = uSnap(numParticles, wgSize);
 
-    ciErrNum = clSetKernelArg(ckFindCellBoundsAndReorder, 0, sizeof(cl_mem), (void*)&d_CellStart);
-    ciErrNum |= clSetKernelArg(ckFindCellBoundsAndReorder, 1, sizeof(cl_mem), (void*)&d_CellEnd);
-    ciErrNum |= clSetKernelArg(ckFindCellBoundsAndReorder, 2, sizeof(cl_mem), (void*)&d_ReorderedPos);
-    ciErrNum |= clSetKernelArg(ckFindCellBoundsAndReorder, 3, sizeof(cl_mem), (void*)&d_ReorderedVel);
-    ciErrNum |= clSetKernelArg(ckFindCellBoundsAndReorder, 4, sizeof(cl_mem), (void*)&d_Hash);
-    ciErrNum |= clSetKernelArg(ckFindCellBoundsAndReorder, 5, sizeof(cl_mem), (void*)&d_Index);
-    ciErrNum |= clSetKernelArg(ckFindCellBoundsAndReorder, 6, sizeof(cl_mem), (void*)&d_Pos);
-    ciErrNum |= clSetKernelArg(ckFindCellBoundsAndReorder, 7, sizeof(cl_mem), (void*)&d_Vel);
-    ciErrNum |= clSetKernelArg(ckFindCellBoundsAndReorder, 8, (wgSize + 1) * sizeof(cl_uint), NULL);
-    ciErrNum |= clSetKernelArg(ckFindCellBoundsAndReorder, 9, sizeof(cl_uint), (void*)&numParticles);
-    oclCheckError(ciErrNum, CL_SUCCESS);
+    error_code = clSetKernelArg(ckFindCellBoundsAndReorder, 0, sizeof(cl_mem), (void*)&d_CellStart);
+    error_code |= clSetKernelArg(ckFindCellBoundsAndReorder, 1, sizeof(cl_mem), (void*)&d_CellEnd);
+    error_code |= clSetKernelArg(ckFindCellBoundsAndReorder, 2, sizeof(cl_mem), (void*)&d_ReorderedPos);
+    error_code |= clSetKernelArg(ckFindCellBoundsAndReorder, 3, sizeof(cl_mem), (void*)&d_ReorderedVel);
+    error_code |= clSetKernelArg(ckFindCellBoundsAndReorder, 4, sizeof(cl_mem), (void*)&d_Hash);
+    error_code |= clSetKernelArg(ckFindCellBoundsAndReorder, 5, sizeof(cl_mem), (void*)&d_Index);
+    error_code |= clSetKernelArg(ckFindCellBoundsAndReorder, 6, sizeof(cl_mem), (void*)&d_Pos);
+    error_code |= clSetKernelArg(ckFindCellBoundsAndReorder, 7, sizeof(cl_mem), (void*)&d_Vel);
+    error_code |= clSetKernelArg(ckFindCellBoundsAndReorder, 8, (wgSize + 1) * sizeof(cl_uint), NULL);
+    error_code |= clSetKernelArg(ckFindCellBoundsAndReorder, 9, sizeof(cl_uint), (void*)&numParticles);
+    check_error(error_code, 0);
 
-    ciErrNum = clEnqueueNDRangeKernel(cqDefaultCommandQue, ckFindCellBoundsAndReorder, 1, NULL, &globalWorkSize, &wgSize, 0, NULL, NULL);
-    oclCheckError(ciErrNum, CL_SUCCESS);
+    error_code = clEnqueueNDRangeKernel(default_cmdq, ckFindCellBoundsAndReorder, 1, NULL, &globalWorkSize, &wgSize, 0, NULL, NULL);
+    check_error(error_code, 0);
 }
 
 extern "C" void collide(cl_mem d_Vel, cl_mem d_ReorderedPos, cl_mem d_ReorderedVel, cl_mem d_Index,
     cl_mem d_CellStart, cl_mem d_CellEnd, uint   numParticles, uint   numCells) {
-    cl_int ciErrNum;
+    cl_int error_code;
     size_t globalWorkSize = uSnap(numParticles, wgSize);
 
-    ciErrNum = clSetKernelArg(ckCollide, 0, sizeof(cl_mem), (void*)&d_Vel);
-    ciErrNum |= clSetKernelArg(ckCollide, 1, sizeof(cl_mem), (void*)&d_ReorderedPos);
-    ciErrNum |= clSetKernelArg(ckCollide, 2, sizeof(cl_mem), (void*)&d_ReorderedVel);
-    ciErrNum |= clSetKernelArg(ckCollide, 3, sizeof(cl_mem), (void*)&d_Index);
-    ciErrNum |= clSetKernelArg(ckCollide, 4, sizeof(cl_mem), (void*)&d_CellStart);
-    ciErrNum |= clSetKernelArg(ckCollide, 5, sizeof(cl_mem), (void*)&d_CellEnd);
-    ciErrNum |= clSetKernelArg(ckCollide, 6, sizeof(cl_mem), (void*)&params);
-    ciErrNum |= clSetKernelArg(ckCollide, 7, sizeof(uint), (void*)&numParticles);
-    oclCheckError(ciErrNum, CL_SUCCESS);
+    error_code = clSetKernelArg(ckCollide, 0, sizeof(cl_mem), (void*)&d_Vel);
+    error_code |= clSetKernelArg(ckCollide, 1, sizeof(cl_mem), (void*)&d_ReorderedPos);
+    error_code |= clSetKernelArg(ckCollide, 2, sizeof(cl_mem), (void*)&d_ReorderedVel);
+    error_code |= clSetKernelArg(ckCollide, 3, sizeof(cl_mem), (void*)&d_Index);
+    error_code |= clSetKernelArg(ckCollide, 4, sizeof(cl_mem), (void*)&d_CellStart);
+    error_code |= clSetKernelArg(ckCollide, 5, sizeof(cl_mem), (void*)&d_CellEnd);
+    error_code |= clSetKernelArg(ckCollide, 6, sizeof(cl_mem), (void*)&params);
+    error_code |= clSetKernelArg(ckCollide, 7, sizeof(uint), (void*)&numParticles);
+    check_error(error_code, 0);
 
-    ciErrNum = clEnqueueNDRangeKernel(cqDefaultCommandQue, ckCollide, 1, NULL, &globalWorkSize, &wgSize, 0, NULL, NULL);
-    oclCheckError(ciErrNum, CL_SUCCESS);
+    error_code = clEnqueueNDRangeKernel(default_cmdq, ckCollide, 1, NULL, &globalWorkSize, &wgSize, 0, NULL, NULL);
+    check_error(error_code, 0);
 }
 

@@ -1,4 +1,3 @@
-#include <GL/glew.h>
 #include <GL\glut.h>
 #include <gl\freeglut.h>
 #include <gl\freeglut_ext.h>
@@ -14,7 +13,7 @@
 
 
 #define GRID_SIZE         64
-#define NUM_PARTICLES     4096
+#define NUM_PARTICLES     1024
 
 using namespace std;
 
@@ -53,15 +52,11 @@ int main(int argc, char* argv[]) {
 	glutInitWindowPosition(100, 100);
 	glutCreateWindow("sphere collision");
 	glEnable(GL_DEPTH_TEST);
-
-	prepareOpenCLPlatform();
+	prepare_ocl_platform();
 	gridSize.x = gridSize.y = gridSize.z = gridDim;
-	psystem = new Spheres(numParticles, gridSize, fParticleRadius, fColliderRadius);
+	psystem = new Spheres(numParticles, gridSize);
 	psystem->reset();
-
 	glutTimerFunc(25, timer, 1);
-	glewInit();
-
 	glutReshapeFunc(reshapeWindow);
 	glutDisplayFunc(display);
 	initLight();
@@ -136,15 +131,6 @@ void initLight() {
 	glLightfv(GL_LIGHT0, GL_POSITION, lightPosition);
 }
 
-void parallerDrawSphere(float* pos, int start, int end) {
-	for (int i = start; i < end; i++) {
-		GLfloat red = (i % NUM_PARTICLES) / (float)NUM_PARTICLES;
-		GLfloat green = (i % NUM_PARTICLES) / (float)NUM_PARTICLES;
-		GLfloat blue = (i % NUM_PARTICLES) / (float)NUM_PARTICLES;
-		drawSphere(pos[i * 4 + 0], pos[i * 4 + 1], pos[i * 4 + 2], pos[i * 4 + 3], red, green, blue);
-	}
-}
-
 void display(void) {
 	glClearColor(0.2, 0.2, 0.2, 0.4);
 	glClearDepth(2);
@@ -168,5 +154,4 @@ void display(void) {
 	glutSwapBuffers();
 
 }
-
 

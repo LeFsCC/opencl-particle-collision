@@ -16,13 +16,10 @@
   </ItemGroup>
   <ItemGroup>
     <None Include="packages.config" />
-    <None Include="add.cl">
-      <Filter>源文件</Filter>
-    </None>
     <None Include="particle.cl">
       <Filter>源文件</Filter>
     </None>
-    <None Include="BitonicSort_b.cl">
+    <None Include="sort.cl">
       <Filter>源文件</Filter>
     </None>
   </ItemGroup>
@@ -42,12 +39,6 @@
       <Filter>源文件</Filter>
     </ClCompile>
     <ClCompile Include="SphereSystem.cpp">
-      <Filter>源文件</Filter>
-    </ClCompile>
-    <ClCompile Include="testAdd.cpp">
-      <Filter>源文件</Filter>
-    </ClCompile>
-    <ClCompile Include="tr.cpp">
       <Filter>源文件</Filter>
     </ClCompile>
   </ItemGroup>

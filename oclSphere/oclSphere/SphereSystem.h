@@ -5,7 +5,7 @@
 #include <cl/cl.h>
 
 typedef unsigned int uint;
-#define oclCheckError(a, b) __oclCheckErrorEX(a, b, 0, __FILE__ , __LINE__)
+#define check_error(a, b) __oclCheckErrorEX(a, b, 0, __FILE__ , __LINE__)
 static size_t wgSize = 64;
 
 struct float3 {
@@ -50,8 +50,9 @@ public:
         POSITION,
         VELOCITY,
     };
-	Spheres(uint numParticles, uint3 gridSize, float particle_radius, float collider_radius);
-    void initialize(int numParticles);
+	Spheres(uint, uint3);
+    void init_params();
+    void init_data();
     float* get_array(ParticleArray array);
     void set_array(ParticleArray array, const float* data, int start, int count);
     void reset();
