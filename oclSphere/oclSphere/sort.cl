@@ -1,3 +1,5 @@
+#define LIMIT 512U
+
 inline void ComparatorPrivate(uint* keyA,uint* valA,uint* keyB,uint* valB,uint dir) {
     if ((*keyA > * keyB) == dir) {
         uint t;
@@ -15,21 +17,21 @@ inline void ComparatorLocal(__local uint* keyA,__local uint* valA,__local uint* 
 }
 
 __kernel void merge_sort( __global uint* dst_key, __global uint* dst_val, __global uint* src_key, __global uint* src_val) {
-    __local uint l_key[512U];
-    __local uint l_val[512U];
+    __local uint l_key[LIMIT];
+    __local uint l_val[LIMIT];
 
-    src_key += get_group_id(0) * 512U + get_local_id(0);
-    src_val += get_group_id(0) * 512U + get_local_id(0);
-    dst_key += get_group_id(0) * 512U + get_local_id(0);
-    dst_val += get_group_id(0) * 512U + get_local_id(0);
+    src_key += get_group_id(0) * LIMIT + get_local_id(0);
+    src_val += get_group_id(0) * LIMIT + get_local_id(0);
+    dst_key += get_group_id(0) * LIMIT + get_local_id(0);
+    dst_val += get_group_id(0) * LIMIT + get_local_id(0);
     l_key[get_local_id(0)] = src_key[0];
     l_val[get_local_id(0)] = src_val[0];
-    l_key[get_local_id(0) + (512U / 2)] = src_key[(512U / 2)];
-    l_val[get_local_id(0) + (512U / 2)] = src_val[(512U / 2)];
+    l_key[get_local_id(0) + (LIMIT / 2)] = src_key[(LIMIT / 2)];
+    l_val[get_local_id(0) + (LIMIT / 2)] = src_val[(LIMIT / 2)];
 
-    uint comparatorI = get_global_id(0) & ((512U / 2) - 1);
+    uint comparatorI = get_global_id(0) & ((LIMIT / 2) - 1);
 
-    for (uint size = 2; size < 512U; size <<= 1) {
+    for (uint size = 2; size < LIMIT; size <<= 1) {
         uint ddd = (comparatorI & (size / 2)) != 0;
         for (uint stride = size / 2; stride > 0; stride >>= 1) {
             barrier(CLK_LOCAL_MEM_FENCE);
@@ -38,7 +40,7 @@ __kernel void merge_sort( __global uint* dst_key, __global uint* dst_val, __glob
         }
     }
     uint ddd = (get_group_id(0) & 1);
-    for (uint stride = 512U / 2; stride > 0; stride >>= 1) {
+    for (uint stride = LIMIT / 2; stride > 0; stride >>= 1) {
         barrier(CLK_LOCAL_MEM_FENCE);
         uint pos = 2 * get_local_id(0) - (get_local_id(0) & (stride - 1));
         ComparatorLocal(&l_key[pos + 0], &l_val[pos + 0], &l_key[pos + stride], &l_val[pos + stride],ddd);
@@ -47,8 +49,8 @@ __kernel void merge_sort( __global uint* dst_key, __global uint* dst_val, __glob
     barrier(CLK_LOCAL_MEM_FENCE);
     dst_key[0] = l_key[get_local_id(0) + 0];
     dst_val[0] = l_val[get_local_id(0) + 0];
-    dst_key[(512U / 2)] = l_key[get_local_id(0) + (512U / 2)];
-    dst_val[(512U / 2)] = l_val[get_local_id(0) + (512U / 2)];
+    dst_key[(LIMIT / 2)] = l_key[get_local_id(0) + (LIMIT / 2)];
+    dst_val[(LIMIT / 2)] = l_val[get_local_id(0) + (LIMIT / 2)];
 }
 
 __kernel void merge(__global uint* dst_key,__global uint* dst_val,__global uint* src_key,__global uint* src_val,

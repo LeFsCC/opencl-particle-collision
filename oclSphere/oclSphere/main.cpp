@@ -11,23 +11,22 @@
 #include "SphereSystem.h"
 #include "utils.h"
 
-
 #define GRID_SIZE         64
 #define NUM_PARTICLES     1024
 
 using namespace std;
 
 //摄像机位置
-float gl_view_x = 6;
-float gl_view_y = 0.0;
-float gl_view_z = 1.75;
+float view_x = 6;
+float view_y = 0.0;
+float view_z = 1.75;
 
 //视点位置
-float gl_target_x = 0;
-float gl_target_y = 0;
-float gl_target_z = 0;
+float target_x = 0;
+float target_y = 0;
+float target_z = 0;
 //缩放比例
-float gl_scale = 1.0f;
+float scale = 1.0f;
 
 void reshapeWindow(GLsizei w, GLsizei h);
 void display(void);
@@ -36,15 +35,15 @@ void initLight();
 
 // 粒子信息
 Spheres* psystem = 0;
-float fParticleRadius = 0.023f;
-float fColliderRadius = 0.17f;
-uint numParticles = 0;
-uint3 gridSize;
+float particle_radius = 0.023f;
+float collider_radius = 0.17f;
+uint num_particles = 0;
+uint3 grid_size;
 
 //主函数
 int main(int argc, char* argv[]) {
 	srand(time(0));
-	numParticles = NUM_PARTICLES;
+	num_particles = NUM_PARTICLES;
 	uint gridDim = GRID_SIZE;
 	glutInit(&argc, argv);
 	glutInitDisplayMode(GLUT_DOUBLE | GLUT_RGBA);
@@ -53,8 +52,8 @@ int main(int argc, char* argv[]) {
 	glutCreateWindow("sphere collision");
 	glEnable(GL_DEPTH_TEST);
 	prepare_ocl_platform();
-	gridSize.x = gridSize.y = gridSize.z = gridDim;
-	psystem = new Spheres(numParticles, gridSize);
+	grid_size.x = grid_size.y = grid_size.z = gridDim;
+	psystem = new Spheres(num_particles, grid_size);
 	psystem->init_particle_params();
 	glutTimerFunc(25, timer, 1);
 	glutReshapeFunc(reshapeWindow);
@@ -64,12 +63,14 @@ int main(int argc, char* argv[]) {
 	return 0;
 }
 
+// 时间回调函数
 void timer(int id) {
 	psystem->update(2.1);
 	glutPostRedisplay();
 	glutTimerFunc(10, timer, 1);
 }
 
+// 窗口大小变化回调函数
 void reshapeWindow(GLsizei w, GLsizei h) {
 	glViewport(0, 0, w, h);
 	glMatrixMode(GL_PROJECTION);
@@ -77,6 +78,7 @@ void reshapeWindow(GLsizei w, GLsizei h) {
 	gluPerspective(45, (GLfloat)w / (GLfloat)h, 0.1, 300);
 }
 
+// 画出周围的网格墙
 void drawWall(GLfloat x, GLfloat y, GLfloat z, GLfloat xl, GLfloat yl, GLfloat zl, GLfloat red, GLfloat green, GLfloat blue) {
 	glPushMatrix();
 	GLfloat color[] = { red, green, blue };
@@ -97,6 +99,7 @@ void drawSphere(GLfloat x, GLfloat y, GLfloat z, GLfloat r, GLfloat red, GLfloat
 	glPopMatrix();
 }
 
+// 画出场景
 void drawCoordinate() {
 	GLfloat T = 0.8;
 	drawWall(0, -1, 0, 2, 0, 2, T, T, T);
@@ -138,13 +141,14 @@ void display(void) {
 
 	glMatrixMode(GL_MODELVIEW);
 	glLoadIdentity();
-	gluLookAt(gl_view_x, gl_view_y, gl_view_z, gl_target_x, gl_target_y, gl_target_z, 0, 1, 0);
-	glScalef(gl_scale, gl_scale, gl_scale);
+	gluLookAt(view_x, view_y, view_z, target_x, target_y, target_z, 0, 1, 0);
+	glScalef(scale, scale, scale);
 
 	drawCoordinate();
 
 	float* pos = psystem->get_pos();
 	
+	// 串行画出粒子
 	for (int i = 0; i < NUM_PARTICLES; i++) {
 		GLfloat red = (i % NUM_PARTICLES) / (float)NUM_PARTICLES;
 		GLfloat green = (i % NUM_PARTICLES) / (float)NUM_PARTICLES;

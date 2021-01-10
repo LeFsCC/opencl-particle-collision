@@ -9,7 +9,7 @@ static cl_mem params;
 static cl_program particle_clprogram, sort_clprogram;
 static cl_command_queue default_cmdq;
 
-
+// 读文件
 char* clcode(const char* fileName, size_t* length) {
     FILE* fp = fopen(fileName, "rb");
     fseek(fp, 0, SEEK_END);
@@ -23,30 +23,38 @@ char* clcode(const char* fileName, size_t* length) {
     return clcode;
 }
 
+// 准备opencl环境
 extern "C" void prepare_ocl_platform() {
     cl_uint counts;
     cl_platform_id* cpPlatform;
     cl_device_id cdDevices;
     cl_int error_code;
 
+    // 获取平台
     error_code = clGetPlatformIDs(0, 0, &counts);
     check_error(error_code, 0);
     cpPlatform =  new cl_platform_id[counts];
     error_code = clGetPlatformIDs(counts, cpPlatform, NULL);
     check_error(error_code, 0);
+    // 从平台中获取设备
     error_code = clGetDeviceIDs(cpPlatform[1], CL_DEVICE_TYPE_GPU, 1, &cdDevices, NULL);
     check_error(error_code, 0);
+    // 创建上下文
     context = clCreateContext(NULL, 1, &cdDevices, 0, 0, &error_code);
     check_error(error_code, 0);
+    // 创建命令队列
     cmdq = clCreateCommandQueue(context, cdDevices, 0, &error_code);
     check_error(error_code, 0);
+    // 读取cl文件, 创建程序
     size_t kernelLength;
     char* cParticles = clcode("particle.cl", &kernelLength);
     check_error(cParticles != NULL, 1);
     particle_clprogram = clCreateProgramWithSource(context, 1, (const char**)&cParticles, NULL, &error_code);
     check_error(error_code, 0);
+    // 编译程序
     error_code = clBuildProgram(particle_clprogram, 0, 0, NULL, NULL, NULL);
     check_error(error_code, 0);
+    // 创建内核
     init_system_ck = clCreateKernel(particle_clprogram, "integrate", &error_code);
     check_error(error_code, 0);
     calc_hash_ck = clCreateKernel(particle_clprogram, "calc_hash", &error_code);
@@ -73,35 +81,33 @@ extern "C" void prepare_ocl_platform() {
     free(cBitonicSort);
 }
 
+// 创建gpu buffer
 extern "C" void create_gpu_buffer(cl_mem * memObj, size_t size) {
     cl_int error_code;
     *memObj = clCreateBuffer(context, CL_MEM_READ_WRITE, size, NULL, &error_code);
     check_error(error_code, 0);
 }
 
-extern "C" void release_gpu_buffer(cl_mem memObj) {
-    cl_int error_code;
-    error_code = clReleaseMemObject(memObj);
-    check_error(error_code, 0);
-}
-
+// 从gpu上获取数据
 extern "C" void get_data_from_gpu(void* hostPtr, cl_mem memObj, size_t size) {
     cl_int error_code;
     error_code = clEnqueueReadBuffer(cmdq, memObj, CL_TRUE, 0, size, hostPtr, 0, NULL, NULL);
     check_error(error_code, 0);
 }
 
+// 将数据写在gpu上
 extern "C" void set_data_on_gpu(cl_mem memObj, const void* hostPtr, size_t offset, size_t size) {
     cl_int error_code;
     error_code = clEnqueueWriteBuffer(cmdq, memObj, CL_TRUE, 0, size, hostPtr, 0, NULL, NULL);
     check_error(error_code, 0);
 }
 
+// 设置常量
 extern "C" void set_constants(sim_params * m_params) {
     set_data_on_gpu(params, m_params, 0, sizeof(sim_params));
 }
 
-
+// 归并排序
 extern"C" void merge_sort(cl_mem dst_key, cl_mem dst_val,uint arr_len) {
     if (arr_len < 2 || cl_uint(arr_len & (arr_len - 1)) == 1)
         exit(0);
@@ -120,6 +126,7 @@ extern"C" void merge_sort(cl_mem dst_key, cl_mem dst_val,uint arr_len) {
 
     local_work_size = LIMIT / 4;
     global_work_size = arr_len / 2;
+    // 执行内核
     error_code = clEnqueueNDRangeKernel(default_cmdq, gpu_sort_ck, 1, NULL, &global_work_size, &local_work_size, 0, NULL, NULL);
     check_error(error_code, 0);
 
@@ -149,6 +156,7 @@ extern"C" void merge_sort(cl_mem dst_key, cl_mem dst_val,uint arr_len) {
     }
 }
 
+// 刷新粒子
 extern "C" void refresh_particles(cl_mem gpu_pos, cl_mem gpu_vel, float delta_time, uint num_particles) {
     cl_int error_code;
     size_t globalWorkSize = get_exact_div_par(num_particles, world_size);
@@ -167,6 +175,7 @@ extern "C" void refresh_particles(cl_mem gpu_pos, cl_mem gpu_vel, float delta_ti
     check_error(error_code, 0);
 }
 
+// 计算哈希
 extern "C" void reckon_hash(cl_mem gpu_hash, cl_mem gpu_index, cl_mem gpu_pos, int num_particles) {
     cl_int error_code;
     size_t global_work_size = get_exact_div_par(num_particles, world_size);
@@ -185,6 +194,8 @@ extern "C" void reckon_hash(cl_mem gpu_hash, cl_mem gpu_index, cl_mem gpu_pos, i
     check_error(error_code, 0);
 }
 
+
+// 计算细胞边界，并对速度和位置进行重排
 extern "C" void find_cell_bounds_and_reorder(cl_mem gpu_cell_start, cl_mem gpu_cell_end, cl_mem gpu_reordered_pos,
     cl_mem gpu_reordered_vel, cl_mem gpu_hash, cl_mem gpu_index, cl_mem gpu_pos, cl_mem gpu_vel,
     uint gpu_num_particles, uint gpu_num_cells) {
