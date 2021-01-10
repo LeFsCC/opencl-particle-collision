@@ -133,24 +133,29 @@ __kernel void find_cell_bounds_reorder(
     if(index < num_particles) {
         hash = d_Hash[index];
         localHash[get_local_id(0) + 1] = hash;
-        if(index > 0 && get_local_id(0) == 0)
-            localHash[0] = d_Hash[index - 1];
+        if(index > 0 && get_local_id(0) == 0) {
+             localHash[0] = d_Hash[index - 1];  
+        }
     }
 
     barrier(CLK_LOCAL_MEM_FENCE);
 
     if(index < num_particles) {
-        if(index == 0)
+        // find bounds
+        if(index == 0) {
             gpu_cell_start[hash] = 0;
-        else{
-            if(hash != localHash[get_local_id(0)])
-                gpu_cell_end[localHash[get_local_id(0)]] = gpu_cell_start[hash] = index;
-        };
-        if(index == num_particles - 1)
+        }
+        else if(hash != localHash[get_local_id(0)]){
+            gpu_cell_end[localHash[get_local_id(0)]] = gpu_cell_start[hash] = index;
+        }
+        if(index == num_particles - 1) {
             gpu_cell_end[hash] = num_particles;
-        uint sortedIndex = gpu_index[index];
-        float4 pos = gpu_pos[sortedIndex];
-        float4 vel = gpu_vel[sortedIndex];
+        }
+
+        // reorder pos and vel
+        uint sidx = gpu_index[index];
+        float4 pos = gpu_pos[sidx];
+        float4 vel = gpu_vel[sidx];
 
         gpu_reorder_pos[index] = pos;
         gpu_reorder_vel[index] = vel;
@@ -162,23 +167,23 @@ float4 collideSpheres(float4 posA,float4 posB,float4 velA,float4 velB,float radi
     float spring,float damping,float shear,float attraction) {
 
     //得到相对位置
+    float4 force = (float4)(0, 0, 0, 0);
     float4     rel_pos = (float4)(posB.x - posA.x, posB.y - posA.y, posB.z - posA.z, 0);
     float        dist = sqrt(rel_pos.x * rel_pos.x + rel_pos.y * rel_pos.y + rel_pos.z * rel_pos.z);
-    float collde_dist = radiusA + radiusB;
 
-    float4 force = (float4)(0, 0, 0, 0);
-    if(dist < collde_dist) {
+    if(dist < radiusA + radiusB) {
+        // 法向向量
         float4 norm = (float4)(rel_pos.x / dist, rel_pos.y / dist, rel_pos.z / dist, 0);
 
         //相对速度
         float4 rel_vel = (float4)(velB.x - velA.x, velB.y - velA.y, velB.z - velA.z, 0);
 
-        //剪应力带来的切向速度
+        //切向速度带来的剪应力
         float relVelDotNorm = rel_vel.x * norm.x + rel_vel.y * norm.y + rel_vel.z * norm.z;
         float4 tanVel = (float4)(rel_vel.x - relVelDotNorm * norm.x, rel_vel.y - relVelDotNorm * norm.y, rel_vel.z - relVelDotNorm * norm.z, 0);
 
         //弹性力
-        float spring_factor = -spring * (collde_dist - dist);
+        float spring_factor = -spring * (radiusA + radiusB - dist);
         force = (float4)(
             spring_factor * norm.x + damping * rel_vel.x + shear * tanVel.x + attraction * rel_pos.x,
             spring_factor * norm.y + damping * rel_vel.y + shear * tanVel.y + attraction * rel_pos.y,
@@ -212,30 +217,28 @@ __kernel void collide(
     //计算与周围cell的碰撞结果
     for(int z = -1; z <= 1; z++)
         for(int y = -1; y <= 1; y++)
-        for(int x = -1; x <= 1; x++) {
-        //得到该细胞中起始位置的例子hash
-        uint   hash = get_grid_hash(gridPos + (int4)(x, y, z, 0), params);
-        uint st = gpu_cell_start[hash];
+            for(int x = -1; x <= 1; x++) {
+            //得到该细胞中起始位置的例子hash
+            uint   hash = get_grid_hash(gridPos + (int4)(x, y, z, 0), params);
+            uint st = gpu_cell_start[hash];
 
-        //跳过空cell
-        if(st == 0xFFFFFFFFU)
-            continue;
-
-        //遍历这个cell中的粒子
-        uint ed = gpu_cell_end[hash];
-        for(uint j = st; j < ed; j++) {
-            if(j == index)
+            //跳过空cell
+            if(st == 0xFFFFFFFFU)
                 continue;
 
-            float4 pos2 = gpu_reorder_pos[j];
-            float4 vel2 = gpu_reorder_vel[j];
-
-            //处理两个例子之间的碰撞
-            force += collideSpheres( pos, pos2,vel, vel2,pos.w, pos2.w,params->spring, params->damping, params->shear, params->attraction);
-        }
-    }gpu_vel
+            //遍历这个cell中的粒子
+            uint ed = gpu_cell_end[hash];
+            for(uint j = st; j < ed; j++) {
+                if(j == index)
+                    continue;
+                float4 pos2 = gpu_reorder_pos[j];
+                float4 vel2 = gpu_reorder_vel[j];
+                //处理两个粒子之间的碰撞
+                force += collideSpheres( pos, pos2,vel, vel2,pos.w, pos2.w,params->spring, params->damping, params->shear, params->attraction);
+            }
+    }
 
     //得到新的位置
-    [gpu_index[index]] = vel + force;
+    gpu_vel[gpu_index[index]] = vel + force;
 }
 
