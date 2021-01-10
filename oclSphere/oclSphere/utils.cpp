@@ -6,7 +6,7 @@
 cl_context context;
 cl_command_queue cmdq;
 static cl_mem params;
-static cl_program particle_clprogram, sort_clprogram;
+static cl_program particle_clprogram;
 static cl_command_queue default_cmdq;
 
 // 读文件
@@ -47,9 +47,9 @@ extern "C" void prepare_ocl_platform() {
     check_error(error_code, 0);
     // 读取cl文件, 创建程序
     size_t kernelLength;
-    char* cParticles = clcode("particle.cl", &kernelLength);
-    check_error(cParticles != NULL, 1);
-    particle_clprogram = clCreateProgramWithSource(context, 1, (const char**)&cParticles, NULL, &error_code);
+    char* particle_cl_code = clcode("particle.cl", &kernelLength);
+    check_error(particle_cl_code != NULL, 1);
+    particle_clprogram = clCreateProgramWithSource(context, 1, (const char**)&particle_cl_code, NULL, &error_code);
     check_error(error_code, 0);
     // 编译程序
     error_code = clBuildProgram(particle_clprogram, 0, 0, NULL, NULL, NULL);
@@ -65,20 +65,13 @@ extern "C" void prepare_ocl_platform() {
     check_error(error_code, 0);
     collide_ck = clCreateKernel(particle_clprogram, "collide", &error_code);
     check_error(error_code, 0);
+    gpu_sort_ck = clCreateKernel(particle_clprogram, "merge_sort", &error_code);
+    check_error(error_code, 0);
+    gpu_sort_merge_ck = clCreateKernel(particle_clprogram, "merge", &error_code);
+    check_error(error_code, 0);
     create_gpu_buffer(&params, sizeof(sim_params));
     default_cmdq = cmdq;
-    char* cBitonicSort = clcode("sort.cl", &kernelLength);
-    sort_clprogram = clCreateProgramWithSource(context, 1, (const char**)&cBitonicSort, &kernelLength, &error_code);
-    check_error(error_code, 0);
-    error_code = clBuildProgram(sort_clprogram, 0, NULL, NULL, NULL, NULL);
-    check_error(error_code, 0);
-    gpu_sort_ck = clCreateKernel(sort_clprogram, "merge_sort", &error_code);
-    check_error(error_code, 0);
-    gpu_sort_merge_ck = clCreateKernel(sort_clprogram, "merge", &error_code);
-    check_error(error_code, 0);
-    default_cmdq = cmdq;
-    free(cParticles);
-    free(cBitonicSort);
+    free(particle_cl_code);
 }
 
 // 创建gpu buffer

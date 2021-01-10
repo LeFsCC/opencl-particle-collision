@@ -19,9 +19,6 @@
     <None Include="particle.cl">
       <Filter>源文件</Filter>
     </None>
-    <None Include="sort.cl">
-      <Filter>源文件</Filter>
-    </None>
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="utils.h">

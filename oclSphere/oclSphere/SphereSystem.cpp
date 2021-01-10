@@ -29,11 +29,11 @@ void Spheres::init_params() {
 	params.num_cells = num_grid_cells;
 	params.world_origin = get_float_array(-1.0f, -1.0f, -1.0f);
 	params.cell_size = get_float_array(0.03f * 2.0f, 0.03f * 2.0f, 0.03f * 2.0f);
-	params.spring = 0.2f;
-	params.damping = 0.02f;
-	params.shear = 0.01f;
+	params.spring = 0.1f;
+	params.damping = 0.01f;
+	params.shear = 0.005f;
 	params.attraction = 0.0f;
-	params.boundaryDamping = -0.5f;
+	params.boundaryDamping = -0.4f;
 	params.gravity = get_float_array(0.0f, -0.0003f, 0.0f);
 	params.global_damping = 1.0f;
 }
