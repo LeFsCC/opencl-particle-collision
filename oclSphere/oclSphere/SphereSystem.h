@@ -17,21 +17,12 @@ struct uint3 {
 };
 
 typedef struct {
-    float3 colliderPos;
-    float  colliderRadius;
-
     float3 gravity;
-    float globalDamping;
-    float particleRadius;
-
-    uint3 gridSize;
-    uint numCells;
-    float3 worldOrigin;
-    float3 cellSize;
-
-    uint numBodies;
-    uint maxParticlesPerCell;
-
+    float global_damping;
+    uint3 grid_size;
+    uint num_cells;
+    float3 world_origin;
+    float3 cell_size;
     float spring;
     float damping;
     float shear;
@@ -39,8 +30,12 @@ typedef struct {
     float boundaryDamping;
 } sim_params;
 
-static inline  float3 make_float3(float x, float y, float z) {
-    float3 t; t.x = x; t.y = y; t.z = z; return t;
+static inline  float3 get_float_array(float x, float y, float z) {
+    float3 t; 
+    t.x = x; 
+    t.y = y; 
+    t.z = z; 
+    return t;
 }
 
 class Spheres {
@@ -49,10 +44,10 @@ public:
     enum attr_type { POS, VEL};
 	Spheres(uint, uint3);
     void init_params();
-    void init_data();
-    float* get_array(attr_type array);
-    void set_array(attr_type array, const float* data, int start, int count);
-    void reset();
+    void init_buffer();
+    float* get_gpu_data(attr_type array);
+    void set_gpu_data(attr_type array, const float* data, int start, int count);
+    void init_particle_params();
     void update(float deltaTime);
     float* get_pos() { return cpu_pos; }
 

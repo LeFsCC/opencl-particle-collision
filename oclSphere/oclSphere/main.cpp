@@ -55,7 +55,7 @@ int main(int argc, char* argv[]) {
 	prepare_ocl_platform();
 	gridSize.x = gridSize.y = gridSize.z = gridDim;
 	psystem = new Spheres(numParticles, gridSize);
-	psystem->reset();
+	psystem->init_particle_params();
 	glutTimerFunc(25, timer, 1);
 	glutReshapeFunc(reshapeWindow);
 	glutDisplayFunc(display);

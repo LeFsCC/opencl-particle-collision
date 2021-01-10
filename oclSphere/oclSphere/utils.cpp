@@ -31,63 +31,44 @@ extern "C" void prepare_ocl_platform() {
 
     error_code = clGetPlatformIDs(0, 0, &counts);
     check_error(error_code, 0);
-
     cpPlatform =  new cl_platform_id[counts];
     error_code = clGetPlatformIDs(counts, cpPlatform, NULL);
     check_error(error_code, 0);
-
     error_code = clGetDeviceIDs(cpPlatform[1], CL_DEVICE_TYPE_GPU, 1, &cdDevices, NULL);
     check_error(error_code, 0);
-
     context = clCreateContext(NULL, 1, &cdDevices, 0, 0, &error_code);
     check_error(error_code, 0);
-
     cmdq = clCreateCommandQueue(context, cdDevices, 0, &error_code);
     check_error(error_code, 0);
-
     size_t kernelLength;
     char* cParticles = clcode("particle.cl", &kernelLength);
     check_error(cParticles != NULL, 1);
-
     particle_clprogram = clCreateProgramWithSource(context, 1, (const char**)&cParticles, NULL, &error_code);
     check_error(error_code, 0);
-
     error_code = clBuildProgram(particle_clprogram, 0, 0, NULL, NULL, NULL);
     check_error(error_code, 0);
-
-    ckIntegrate = clCreateKernel(particle_clprogram, "integrate", &error_code);
+    init_system_ck = clCreateKernel(particle_clprogram, "integrate", &error_code);
     check_error(error_code, 0);
-
-    ckCalcHash = clCreateKernel(particle_clprogram, "calcHash", &error_code);
+    calc_hash_ck = clCreateKernel(particle_clprogram, "calc_hash", &error_code);
     check_error(error_code, 0);
-
-    ckMemset = clCreateKernel(particle_clprogram, "Memset", &error_code);
+    memset_ck = clCreateKernel(particle_clprogram, "memset_gpu", &error_code);
     check_error(error_code, 0);
-
-    ckFindCellBoundsAndReorder = clCreateKernel(particle_clprogram, "findCellBoundsAndReorder", &error_code);
+    find_bounds_and_reorder_ck = clCreateKernel(particle_clprogram, "find_cell_bounds_reorder", &error_code);
     check_error(error_code, 0);
-
-    ckCollide = clCreateKernel(particle_clprogram, "collide", &error_code);
+    collide_ck = clCreateKernel(particle_clprogram, "collide", &error_code);
     check_error(error_code, 0);
-
     create_gpu_buffer(&params, sizeof(sim_params));
     default_cmdq = cmdq;
-
     char* cBitonicSort = clcode("sort.cl", &kernelLength);
     sort_clprogram = clCreateProgramWithSource(context, 1, (const char**)&cBitonicSort, &kernelLength, &error_code);
     check_error(error_code, 0);
-
     error_code = clBuildProgram(sort_clprogram, 0, NULL, NULL, NULL, NULL);
     check_error(error_code, 0);
-
-    ckBitonicSortLocal1 = clCreateKernel(sort_clprogram, "bitonicSortLocal1", &error_code);
+    gpu_sort_ck = clCreateKernel(sort_clprogram, "merge_sort", &error_code);
     check_error(error_code, 0);
-
-    ckBitonicMergeGlobal = clCreateKernel(sort_clprogram, "bitonicMergeGlobal", &error_code);
+    gpu_sort_merge_ck = clCreateKernel(sort_clprogram, "merge", &error_code);
     check_error(error_code, 0);
-
     default_cmdq = cmdq;
-
     free(cParticles);
     free(cBitonicSort);
 }
@@ -120,145 +101,166 @@ extern "C" void set_constants(sim_params * m_params) {
     set_data_on_gpu(params, m_params, 0, sizeof(sim_params));
 }
  
-extern"C" void merge_sort(cl_command_queue cqCommandQueue,cl_mem d_DstKey, cl_mem d_DstVal,cl_mem d_SrcKey,cl_mem d_SrcVal, 
-    uint batch, uint arrayLength, uint dir) {
+extern"C" void merge_sort(cl_command_queue cmdq,cl_mem dst_key, cl_mem dst_val,cl_mem src_key,cl_mem src_val, 
+    uint batch, uint arr_len, uint dir) {
 
-    if (arrayLength < 2)
+    if (arr_len < 2)
         return;
-    check_error(cl_uint(arrayLength & (arrayLength - 1)) == 1, 0);
+    check_error(cl_uint(arr_len & (arr_len - 1)) == 1, 0);
 
-    if (!cqCommandQueue)
-        cqCommandQueue = default_cmdq;
+    if (!cmdq)
+        cmdq = default_cmdq;
 
     dir = (dir != 0);
 
     cl_int error_code;
-    size_t localWorkSize, globalWorkSize;
-    error_code = clSetKernelArg(ckBitonicSortLocal1, 0, sizeof(cl_mem), (void*)&d_DstKey);
-    error_code |= clSetKernelArg(ckBitonicSortLocal1, 1, sizeof(cl_mem), (void*)&d_DstVal);
-    error_code |= clSetKernelArg(ckBitonicSortLocal1, 2, sizeof(cl_mem), (void*)&d_SrcKey);
-    error_code |= clSetKernelArg(ckBitonicSortLocal1, 3, sizeof(cl_mem), (void*)&d_SrcVal);
+    size_t local_work_size, global_work_size;
+    error_code = clSetKernelArg(gpu_sort_ck, 0, sizeof(cl_mem), (void*)&dst_key);
+    check_error(error_code, 0);
+    error_code = clSetKernelArg(gpu_sort_ck, 1, sizeof(cl_mem), (void*)&dst_val);
+    check_error(error_code, 0);
+    error_code = clSetKernelArg(gpu_sort_ck, 2, sizeof(cl_mem), (void*)&src_key);
+    check_error(error_code, 0);
+    error_code = clSetKernelArg(gpu_sort_ck, 3, sizeof(cl_mem), (void*)&src_val);
     check_error(error_code, 0);
 
-    localWorkSize = LOCAL_SIZE_LIMIT / 2;
-    globalWorkSize = batch * arrayLength / 2;
-    error_code = clEnqueueNDRangeKernel(cqCommandQueue, ckBitonicSortLocal1, 1, NULL, &globalWorkSize, &localWorkSize, 0, NULL, NULL);
+    local_work_size = LIMIT / 2;
+    global_work_size = batch * arr_len / 2;
+    error_code = clEnqueueNDRangeKernel(cmdq, gpu_sort_ck, 1, NULL, &global_work_size, &local_work_size, 0, NULL, NULL);
     check_error(error_code, 0);
 
-    for (unsigned int size = 2 * LOCAL_SIZE_LIMIT; size <= arrayLength; size <<= 1)
-    {
-        for (unsigned stride = size / 2; stride > 0; stride >>= 1)
-        {
-            if (stride >= LOCAL_SIZE_LIMIT)
-            {
-                //Launch merge
-                error_code = clSetKernelArg(ckBitonicMergeGlobal, 0, sizeof(cl_mem), (void*)&d_DstKey);
-                error_code |= clSetKernelArg(ckBitonicMergeGlobal, 1, sizeof(cl_mem), (void*)&d_DstVal);
-                error_code |= clSetKernelArg(ckBitonicMergeGlobal, 2, sizeof(cl_mem), (void*)&d_DstKey);
-                error_code |= clSetKernelArg(ckBitonicMergeGlobal, 3, sizeof(cl_mem), (void*)&d_DstVal);
-                error_code |= clSetKernelArg(ckBitonicMergeGlobal, 4, sizeof(cl_uint), (void*)&arrayLength);
-                error_code |= clSetKernelArg(ckBitonicMergeGlobal, 5, sizeof(cl_uint), (void*)&size);
-                error_code |= clSetKernelArg(ckBitonicMergeGlobal, 6, sizeof(cl_uint), (void*)&stride);
-                error_code |= clSetKernelArg(ckBitonicMergeGlobal, 7, sizeof(cl_uint), (void*)&dir);
+    for (unsigned int size = 2 * LIMIT; size <= arr_len; size <<= 1) {
+        for (unsigned stride = size / 2; stride > 0; stride >>= 1) {
+            if (stride >= LIMIT) {
+                error_code = clSetKernelArg(gpu_sort_merge_ck, 0, sizeof(cl_mem), (void*)&dst_key);
+                check_error(error_code, 0);
+                error_code = clSetKernelArg(gpu_sort_merge_ck, 1, sizeof(cl_mem), (void*)&dst_val);
+                check_error(error_code, 0);
+                error_code = clSetKernelArg(gpu_sort_merge_ck, 2, sizeof(cl_mem), (void*)&dst_key);
+                check_error(error_code, 0);
+                error_code = clSetKernelArg(gpu_sort_merge_ck, 3, sizeof(cl_mem), (void*)&dst_val);
+                check_error(error_code, 0);
+                error_code = clSetKernelArg(gpu_sort_merge_ck, 4, sizeof(cl_uint), (void*)&arr_len);
+                check_error(error_code, 0);
+                error_code = clSetKernelArg(gpu_sort_merge_ck, 5, sizeof(cl_uint), (void*)&size);
+                check_error(error_code, 0);
+                error_code = clSetKernelArg(gpu_sort_merge_ck, 6, sizeof(cl_uint), (void*)&stride);
+                check_error(error_code, 0);
+                error_code = clSetKernelArg(gpu_sort_merge_ck, 7, sizeof(cl_uint), (void*)&dir);
                 check_error(error_code, 0);
 
-                localWorkSize = LOCAL_SIZE_LIMIT / 4;
-                globalWorkSize = batch * arrayLength / 2;
+                local_work_size = LIMIT / 4;
+                global_work_size = batch * arr_len / 2;
 
-                error_code = clEnqueueNDRangeKernel(cqCommandQueue, ckBitonicMergeGlobal, 1, NULL, &globalWorkSize, &localWorkSize, 0, NULL, NULL);
+                error_code = clEnqueueNDRangeKernel(cmdq, gpu_sort_merge_ck, 1, NULL, &global_work_size, &local_work_size, 0, NULL, NULL);
                 check_error(error_code, 0);
             }
         }
     }
 }
 
-extern "C" void refresh_particles(cl_mem d_Pos, cl_mem d_Vel, float deltaTime, uint numParticles) {
+extern "C" void refresh_particles(cl_mem gpu_pos, cl_mem gpu_vel, float delta_time, uint num_particles) {
     cl_int error_code;
-    size_t globalWorkSize = get_exact_div_par(numParticles, world_size);
+    size_t globalWorkSize = get_exact_div_par(num_particles, world_size);
 
-    error_code = clSetKernelArg(ckIntegrate, 0, sizeof(cl_mem), (void*)&d_Pos);
+    error_code = clSetKernelArg(init_system_ck, 0, sizeof(cl_mem), (void*)&gpu_pos);
     check_error(error_code, 0);
-
-    error_code |= clSetKernelArg(ckIntegrate, 1, sizeof(cl_mem), (void*)&d_Vel);
+    error_code = clSetKernelArg(init_system_ck, 1, sizeof(cl_mem), (void*)&gpu_vel);
     check_error(error_code, 0);
-    error_code |= clSetKernelArg(ckIntegrate, 2, sizeof(cl_mem), (void*)&params);
+    error_code = clSetKernelArg(init_system_ck, 2, sizeof(cl_mem), (void*)&params);
     check_error(error_code, 0);
-    error_code |= clSetKernelArg(ckIntegrate, 3, sizeof(float), (void*)&deltaTime);
+    error_code = clSetKernelArg(init_system_ck, 3, sizeof(float), (void*)&delta_time);
     check_error(error_code, 0);
-    error_code |= clSetKernelArg(ckIntegrate, 4, sizeof(uint), (void*)&numParticles);
+    error_code = clSetKernelArg(init_system_ck, 4, sizeof(uint), (void*)&num_particles);
     check_error(error_code, 0);
-
-    error_code = clEnqueueNDRangeKernel(default_cmdq, ckIntegrate, 1, NULL, &globalWorkSize, &world_size, 0, NULL, NULL);
+    error_code = clEnqueueNDRangeKernel(default_cmdq, init_system_ck, 1, NULL, &globalWorkSize, &world_size, 0, NULL, NULL);
     check_error(error_code, 0);
 }
 
-extern "C" void reckon_hash(cl_mem d_Hash, cl_mem d_Index, cl_mem d_Pos, int numParticles) {
+extern "C" void reckon_hash(cl_mem gpu_hash, cl_mem gpu_index, cl_mem gpu_pos, int num_particles) {
     cl_int error_code;
-    size_t globalWorkSize = get_exact_div_par(numParticles, world_size);
+    size_t globalWorkSize = get_exact_div_par(num_particles, world_size);
 
-    error_code = clSetKernelArg(ckCalcHash, 0, sizeof(cl_mem), (void*)&d_Hash);
-    error_code |= clSetKernelArg(ckCalcHash, 1, sizeof(cl_mem), (void*)&d_Index);
-    error_code |= clSetKernelArg(ckCalcHash, 2, sizeof(cl_mem), (void*)&d_Pos);
-    error_code |= clSetKernelArg(ckCalcHash, 3, sizeof(cl_mem), (void*)&params);
-    error_code |= clSetKernelArg(ckCalcHash, 4, sizeof(uint), (void*)&numParticles);
+    error_code = clSetKernelArg(calc_hash_ck, 0, sizeof(cl_mem), (void*)&gpu_hash);
     check_error(error_code, 0);
-
-    error_code = clEnqueueNDRangeKernel(default_cmdq, ckCalcHash, 1, NULL, &globalWorkSize, &world_size, 0, NULL, NULL);
+    error_code = clSetKernelArg(calc_hash_ck, 1, sizeof(cl_mem), (void*)&gpu_index);
+    check_error(error_code, 0);
+    error_code = clSetKernelArg(calc_hash_ck, 2, sizeof(cl_mem), (void*)&gpu_pos);
+    check_error(error_code, 0);
+    error_code = clSetKernelArg(calc_hash_ck, 3, sizeof(cl_mem), (void*)&params);
+    check_error(error_code, 0);
+    error_code = clSetKernelArg(calc_hash_ck, 4, sizeof(uint), (void*)&num_particles);
+    check_error(error_code, 0);
+    error_code = clEnqueueNDRangeKernel(default_cmdq, calc_hash_ck, 1, NULL, &globalWorkSize, &world_size, 0, NULL, NULL);
     check_error(error_code, 0);
 }
 
-static void memset_gpu(cl_mem d_Data, uint val, uint N) {
+static void memset_gpu(cl_mem gpu_data, uint val, uint N) {
     cl_int error_code;
     size_t globalWorkSize = get_exact_div_par(N, world_size);
-
-    error_code = clSetKernelArg(ckMemset, 0, sizeof(cl_mem), (void*)&d_Data);
-    error_code |= clSetKernelArg(ckMemset, 1, sizeof(cl_uint), (void*)&val);
-    error_code |= clSetKernelArg(ckMemset, 2, sizeof(cl_uint), (void*)&N);
+    error_code = clSetKernelArg(memset_ck, 0, sizeof(cl_mem), (void*)&gpu_data);
     check_error(error_code, 0);
-
-    error_code = clEnqueueNDRangeKernel(default_cmdq, ckMemset, 1, NULL, &globalWorkSize, &world_size, 0, NULL, NULL);
+    error_code = clSetKernelArg(memset_ck, 1, sizeof(cl_uint), (void*)&val);
     check_error(error_code, 0);
-}
-
-extern "C" void find_cell_bounds_and_reorder(cl_mem d_CellStart, cl_mem d_CellEnd, cl_mem d_ReorderedPos,
-    cl_mem d_ReorderedVel, cl_mem d_Hash, cl_mem d_Index, cl_mem d_Pos, cl_mem d_Vel,
-    uint numParticles, uint numCells) {
-    cl_int error_code;
-    memset_gpu(d_CellStart, 0xFFFFFFFFU, numCells);
-    size_t globalWorkSize = get_exact_div_par(numParticles, world_size);
-
-    error_code = clSetKernelArg(ckFindCellBoundsAndReorder, 0, sizeof(cl_mem), (void*)&d_CellStart);
-    error_code |= clSetKernelArg(ckFindCellBoundsAndReorder, 1, sizeof(cl_mem), (void*)&d_CellEnd);
-    error_code |= clSetKernelArg(ckFindCellBoundsAndReorder, 2, sizeof(cl_mem), (void*)&d_ReorderedPos);
-    error_code |= clSetKernelArg(ckFindCellBoundsAndReorder, 3, sizeof(cl_mem), (void*)&d_ReorderedVel);
-    error_code |= clSetKernelArg(ckFindCellBoundsAndReorder, 4, sizeof(cl_mem), (void*)&d_Hash);
-    error_code |= clSetKernelArg(ckFindCellBoundsAndReorder, 5, sizeof(cl_mem), (void*)&d_Index);
-    error_code |= clSetKernelArg(ckFindCellBoundsAndReorder, 6, sizeof(cl_mem), (void*)&d_Pos);
-    error_code |= clSetKernelArg(ckFindCellBoundsAndReorder, 7, sizeof(cl_mem), (void*)&d_Vel);
-    error_code |= clSetKernelArg(ckFindCellBoundsAndReorder, 8, (world_size + 1) * sizeof(cl_uint), NULL);
-    error_code |= clSetKernelArg(ckFindCellBoundsAndReorder, 9, sizeof(cl_uint), (void*)&numParticles);
+    error_code = clSetKernelArg(memset_ck, 2, sizeof(cl_uint), (void*)&N);
     check_error(error_code, 0);
-
-    error_code = clEnqueueNDRangeKernel(default_cmdq, ckFindCellBoundsAndReorder, 1, NULL, &globalWorkSize, &world_size, 0, NULL, NULL);
+    error_code = clEnqueueNDRangeKernel(default_cmdq, memset_ck, 1, NULL, &globalWorkSize, &world_size, 0, NULL, NULL);
     check_error(error_code, 0);
 }
 
-extern "C" void collide(cl_mem d_Vel, cl_mem d_ReorderedPos, cl_mem d_ReorderedVel, cl_mem d_Index,
-    cl_mem d_CellStart, cl_mem d_CellEnd, uint   numParticles, uint   numCells) {
+extern "C" void find_cell_bounds_and_reorder(cl_mem gpu_cell_start, cl_mem gpu_cell_end, cl_mem gpu_reordered_pos,
+    cl_mem gpu_reordered_vel, cl_mem gpu_hash, cl_mem gpu_index, cl_mem gpu_pos, cl_mem gpu_vel,
+    uint gpu_num_particles, uint gpu_num_cells) {
     cl_int error_code;
-    size_t globalWorkSize = get_exact_div_par(numParticles, world_size);
+    memset_gpu(gpu_cell_start, 0xFFFFFFFFU, gpu_num_cells);
+    size_t globalWorkSize = get_exact_div_par(gpu_num_particles, world_size);
 
-    error_code = clSetKernelArg(ckCollide, 0, sizeof(cl_mem), (void*)&d_Vel);
-    error_code |= clSetKernelArg(ckCollide, 1, sizeof(cl_mem), (void*)&d_ReorderedPos);
-    error_code |= clSetKernelArg(ckCollide, 2, sizeof(cl_mem), (void*)&d_ReorderedVel);
-    error_code |= clSetKernelArg(ckCollide, 3, sizeof(cl_mem), (void*)&d_Index);
-    error_code |= clSetKernelArg(ckCollide, 4, sizeof(cl_mem), (void*)&d_CellStart);
-    error_code |= clSetKernelArg(ckCollide, 5, sizeof(cl_mem), (void*)&d_CellEnd);
-    error_code |= clSetKernelArg(ckCollide, 6, sizeof(cl_mem), (void*)&params);
-    error_code |= clSetKernelArg(ckCollide, 7, sizeof(uint), (void*)&numParticles);
+    error_code = clSetKernelArg(find_bounds_and_reorder_ck, 0, sizeof(cl_mem), (void*)&gpu_cell_start);
     check_error(error_code, 0);
+    error_code = clSetKernelArg(find_bounds_and_reorder_ck, 1, sizeof(cl_mem), (void*)&gpu_cell_end);
+    check_error(error_code, 0);
+    error_code = clSetKernelArg(find_bounds_and_reorder_ck, 2, sizeof(cl_mem), (void*)&gpu_reordered_pos);
+    check_error(error_code, 0);
+    error_code = clSetKernelArg(find_bounds_and_reorder_ck, 3, sizeof(cl_mem), (void*)&gpu_reordered_vel);
+    check_error(error_code, 0);
+    error_code = clSetKernelArg(find_bounds_and_reorder_ck, 4, sizeof(cl_mem), (void*)&gpu_hash);
+    check_error(error_code, 0);
+    error_code = clSetKernelArg(find_bounds_and_reorder_ck, 5, sizeof(cl_mem), (void*)&gpu_index);
+    check_error(error_code, 0);
+    error_code = clSetKernelArg(find_bounds_and_reorder_ck, 6, sizeof(cl_mem), (void*)&gpu_pos);
+    check_error(error_code, 0);
+    error_code = clSetKernelArg(find_bounds_and_reorder_ck, 7, sizeof(cl_mem), (void*)&gpu_vel);
+    check_error(error_code, 0);
+    error_code = clSetKernelArg(find_bounds_and_reorder_ck, 8, (world_size + 1) * sizeof(cl_uint), NULL);
+    check_error(error_code, 0);
+    error_code = clSetKernelArg(find_bounds_and_reorder_ck, 9, sizeof(cl_uint), (void*)&gpu_num_particles);
+    check_error(error_code, 0);
+    error_code = clEnqueueNDRangeKernel(default_cmdq, find_bounds_and_reorder_ck, 1, NULL, &globalWorkSize, &world_size, 0, NULL, NULL);
+    check_error(error_code, 0);
+}
 
-    error_code = clEnqueueNDRangeKernel(default_cmdq, ckCollide, 1, NULL, &globalWorkSize, &world_size, 0, NULL, NULL);
+extern "C" void collide(cl_mem gpu_vel, cl_mem gpu_reordered_pos, cl_mem gpu_reordered_vel, cl_mem gpu_index,
+    cl_mem gpu_cell_start, cl_mem gpu_cell_end, uint   num_particles, uint   num_cells) {
+    cl_int error_code;
+    size_t globalWorkSize = get_exact_div_par(num_particles, world_size);
+
+    error_code = clSetKernelArg(collide_ck, 0, sizeof(cl_mem), (void*)&gpu_vel);
+    check_error(error_code, 0);
+    error_code = clSetKernelArg(collide_ck, 1, sizeof(cl_mem), (void*)&gpu_reordered_pos);
+    check_error(error_code, 0);
+    error_code = clSetKernelArg(collide_ck, 2, sizeof(cl_mem), (void*)&gpu_reordered_vel);
+    check_error(error_code, 0);
+    error_code = clSetKernelArg(collide_ck, 3, sizeof(cl_mem), (void*)&gpu_index);
+    check_error(error_code, 0);
+    error_code = clSetKernelArg(collide_ck, 4, sizeof(cl_mem), (void*)&gpu_cell_start);
+    check_error(error_code, 0);
+    error_code = clSetKernelArg(collide_ck, 5, sizeof(cl_mem), (void*)&gpu_cell_end);
+    check_error(error_code, 0);
+    error_code = clSetKernelArg(collide_ck, 6, sizeof(cl_mem), (void*)&params);
+    check_error(error_code, 0);
+    error_code = clSetKernelArg(collide_ck, 7, sizeof(uint), (void*)&num_particles);
+    check_error(error_code, 0);
+    error_code = clEnqueueNDRangeKernel(default_cmdq, collide_ck, 1, NULL, &globalWorkSize, &world_size, 0, NULL, NULL);
     check_error(error_code, 0);
 }
 

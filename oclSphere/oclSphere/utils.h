@@ -13,14 +13,10 @@ typedef unsigned int uint;
 #define MIN(a, b) ((a < b) ? a : b)
 #define CLAMP(a, b, c) MIN(MAX(a, b), c)
 
+static const uint LIMIT = 512U;
 
-
-static const uint LOCAL_SIZE_LIMIT = 512U;
-
-static cl_kernel ckIntegrate, ckCalcHash, ckMemset, ckFindCellBoundsAndReorder, ckCollide;
-static cl_kernel ckBitonicSortLocal1, ckBitonicMergeGlobal;
-
-
+static cl_kernel init_system_ck, calc_hash_ck, memset_ck, find_bounds_and_reorder_ck, collide_ck;
+static cl_kernel gpu_sort_ck, gpu_sort_merge_ck;
 extern "C" void prepare_ocl_platform();
 extern "C" void create_gpu_buffer(cl_mem * memObj, size_t size);
 extern "C" void release_gpu_buffer(cl_mem memObj);

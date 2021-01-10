@@ -1,5 +1,3 @@
-#define LOCAL_SIZE_LIMIT 512U
-
 inline void ComparatorPrivate(uint* keyA,uint* valA,uint* keyB,uint* valB,uint dir) {
     if ((*keyA > * keyB) == dir) {
         uint t;
@@ -16,22 +14,22 @@ inline void ComparatorLocal(__local uint* keyA,__local uint* valA,__local uint* 
     }
 }
 
-__kernel void bitonicSortLocal1( __global uint* d_DstKey, __global uint* d_DstVal, __global uint* d_SrcKey, __global uint* d_SrcVal) {
-    __local uint l_key[LOCAL_SIZE_LIMIT];
-    __local uint l_val[LOCAL_SIZE_LIMIT];
+__kernel void merge_sort( __global uint* dst_key, __global uint* dst_val, __global uint* src_key, __global uint* src_val) {
+    __local uint l_key[512U];
+    __local uint l_val[512U];
 
-    d_SrcKey += get_group_id(0) * LOCAL_SIZE_LIMIT + get_local_id(0);
-    d_SrcVal += get_group_id(0) * LOCAL_SIZE_LIMIT + get_local_id(0);
-    d_DstKey += get_group_id(0) * LOCAL_SIZE_LIMIT + get_local_id(0);
-    d_DstVal += get_group_id(0) * LOCAL_SIZE_LIMIT + get_local_id(0);
-    l_key[get_local_id(0)] = d_SrcKey[0];
-    l_val[get_local_id(0)] = d_SrcVal[0];
-    l_key[get_local_id(0) + (LOCAL_SIZE_LIMIT / 2)] = d_SrcKey[(LOCAL_SIZE_LIMIT / 2)];
-    l_val[get_local_id(0) + (LOCAL_SIZE_LIMIT / 2)] = d_SrcVal[(LOCAL_SIZE_LIMIT / 2)];
+    src_key += get_group_id(0) * 512U + get_local_id(0);
+    src_val += get_group_id(0) * 512U + get_local_id(0);
+    dst_key += get_group_id(0) * 512U + get_local_id(0);
+    dst_val += get_group_id(0) * 512U + get_local_id(0);
+    l_key[get_local_id(0)] = src_key[0];
+    l_val[get_local_id(0)] = src_val[0];
+    l_key[get_local_id(0) + (512U / 2)] = src_key[(512U / 2)];
+    l_val[get_local_id(0) + (512U / 2)] = src_val[(512U / 2)];
 
-    uint comparatorI = get_global_id(0) & ((LOCAL_SIZE_LIMIT / 2) - 1);
+    uint comparatorI = get_global_id(0) & ((512U / 2) - 1);
 
-    for (uint size = 2; size < LOCAL_SIZE_LIMIT; size <<= 1) {
+    for (uint size = 2; size < 512U; size <<= 1) {
         uint ddd = (comparatorI & (size / 2)) != 0;
         for (uint stride = size / 2; stride > 0; stride >>= 1) {
             barrier(CLK_LOCAL_MEM_FENCE);
@@ -40,20 +38,20 @@ __kernel void bitonicSortLocal1( __global uint* d_DstKey, __global uint* d_DstVa
         }
     }
     uint ddd = (get_group_id(0) & 1);
-    for (uint stride = LOCAL_SIZE_LIMIT / 2; stride > 0; stride >>= 1) {
+    for (uint stride = 512U / 2; stride > 0; stride >>= 1) {
         barrier(CLK_LOCAL_MEM_FENCE);
         uint pos = 2 * get_local_id(0) - (get_local_id(0) & (stride - 1));
         ComparatorLocal(&l_key[pos + 0], &l_val[pos + 0], &l_key[pos + stride], &l_val[pos + stride],ddd);
     }
 
     barrier(CLK_LOCAL_MEM_FENCE);
-    d_DstKey[0] = l_key[get_local_id(0) + 0];
-    d_DstVal[0] = l_val[get_local_id(0) + 0];
-    d_DstKey[(LOCAL_SIZE_LIMIT / 2)] = l_key[get_local_id(0) + (LOCAL_SIZE_LIMIT / 2)];
-    d_DstVal[(LOCAL_SIZE_LIMIT / 2)] = l_val[get_local_id(0) + (LOCAL_SIZE_LIMIT / 2)];
+    dst_key[0] = l_key[get_local_id(0) + 0];
+    dst_val[0] = l_val[get_local_id(0) + 0];
+    dst_key[(512U / 2)] = l_key[get_local_id(0) + (512U / 2)];
+    dst_val[(512U / 2)] = l_val[get_local_id(0) + (512U / 2)];
 }
 
-__kernel void bitonicMergeGlobal(__global uint* d_DstKey,__global uint* d_DstVal,__global uint* d_SrcKey,__global uint* d_SrcVal,
+__kernel void merge(__global uint* dst_key,__global uint* dst_val,__global uint* src_key,__global uint* src_val,
     uint arrayLength,uint size,uint stride,uint dir) {
     uint global_comparatorI = get_global_id(0);
     uint        comparatorI = global_comparatorI & (arrayLength / 2 - 1);
@@ -61,15 +59,15 @@ __kernel void bitonicMergeGlobal(__global uint* d_DstKey,__global uint* d_DstVal
     uint ddd = dir ^ ((comparatorI & (size / 2)) != 0);
     uint pos = 2 * global_comparatorI - (global_comparatorI & (stride - 1));
 
-    uint keyA = d_SrcKey[pos + 0];
-    uint valA = d_SrcVal[pos + 0];
-    uint keyB = d_SrcKey[pos + stride];
-    uint valB = d_SrcVal[pos + stride];
+    uint keyA = src_key[pos + 0];
+    uint valA = src_val[pos + 0];
+    uint keyB = src_key[pos + stride];
+    uint valB = src_val[pos + stride];
 
     ComparatorPrivate(&keyA, &valA,&keyB, &valB,ddd);
 
-    d_DstKey[pos + 0] = keyA;
-    d_DstVal[pos + 0] = valA;
-    d_DstKey[pos + stride] = keyB;
-    d_DstVal[pos + stride] = valB;
+    dst_key[pos + 0] = keyA;
+    dst_val[pos + 0] = valA;
+    dst_key[pos + stride] = keyB;
+    dst_val[pos + stride] = valB;
 }
